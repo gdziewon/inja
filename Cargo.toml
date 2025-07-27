@@ -1,14 +1,21 @@
 [package]
-name = "injector"
+name = "inja"
 version = "0.1.0"
 edition = "2024"
 
-[workspace]
-members = [
-    "inja",
-    "injectant"
-]
-
-default-members = ["inja", "injectant"]
+[[bin]]
+name = "inja"
+path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
+windows = {version = "0.61.3", features = ["Win32", "Wdk",
+"Win32_Security",
+"Win32_System_LibraryLoader",
+"Win32_System_Threading",
+"Win32_System_Memory",
+"Win32_System_SystemServices",
+"Win32_System_Diagnostics_ToolHelp",
+"Win32_System_Diagnostics_Debug",
+"Wdk_System_SystemServices"
+]}
