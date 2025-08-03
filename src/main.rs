@@ -1,25 +1,36 @@
 use core::ffi::c_void;
 use std::ffi::CStr;
-use std::u32;
+use std::{ptr, u32};
 use std::path::PathBuf;
 use clap::Parser;
 
 use windows::core::{s, w};
 
 use windows::Win32::{
-    Foundation::CloseHandle,
+    Foundation::{CloseHandle, HANDLE},
     System::{
         Diagnostics::{
             ToolHelp::{CreateToolhelp32Snapshot, TH32CS_SNAPPROCESS, PROCESSENTRY32, Process32First, Process32Next},
             Debug::WriteProcessMemory
         },
         Threading::{
-            WaitForSingleObject, CreateRemoteThread, OpenProcess, PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD
+            WaitForSingleObject, CreateRemoteThread, OpenProcess, PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD, THREAD_ALL_ACCESS
         },
         Memory::{VirtualAllocEx, MEM_RESERVE, MEM_COMMIT, PAGE_READWRITE},
         LibraryLoader::{GetModuleHandleW, GetProcAddress}
     },
 };
+
+use dinvk::{
+    data::NtCreateThreadEx,
+    dinvoke
+};
+
+#[derive(Debug)]
+enum LaunchMethod {
+    CreateRemoteThread,
+    NtCreateThreadEx
+}
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -46,7 +57,7 @@ fn get_process_id(process_name: &str) -> Result<u32, Box<dyn std::error::Error>>
     return Err(format!("Couldn't find the process with name {process_name}").into())
 }
 
-fn inject(dll_path: &PathBuf, process_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn inject(dll_path: &PathBuf, process_name: &str, shellcode_execution_method: LaunchMethod) -> Result<(), Box<dyn std::error::Error>> {
     let pid = get_process_id(process_name)?;
 
     if !dll_path.exists() {
@@ -64,7 +75,7 @@ fn inject(dll_path: &PathBuf, process_name: &str) -> Result<(), Box<dyn std::err
         )
     }?;
 
-    let allocated_memory = unsafe {
+    let dll_path_mem_alloc = unsafe {
         VirtualAllocEx(
             handle, 
             None, 
@@ -74,14 +85,14 @@ fn inject(dll_path: &PathBuf, process_name: &str) -> Result<(), Box<dyn std::err
         )
     };
 
-    if allocated_memory.is_null() {
+    if dll_path_mem_alloc.is_null() {
         return Err("Allocation failed".into());
     }
 
     unsafe {
         WriteProcessMemory(
             handle,
-            allocated_memory,
+            dll_path_mem_alloc,
             dll_path_wide.as_ptr() as *const c_void,
             path_size_in_bytes,
             None
@@ -92,20 +103,50 @@ fn inject(dll_path: &PathBuf, process_name: &str) -> Result<(), Box<dyn std::err
     let addr = unsafe { GetProcAddress(kernel32, s!("LoadLibraryW")) }
         .ok_or("LoadLibraryW not found")?;
 
-    let _thread = unsafe {
-        CreateRemoteThread(
-            handle, 
-            None,
-            0,
-            Some(std::mem::transmute(addr)),
-            Some(allocated_memory),
-            0,
-            None
-        )
-    }?;
+    let thread = match shellcode_execution_method {
+        LaunchMethod::CreateRemoteThread => {
+            let thread = unsafe {
+                    CreateRemoteThread(
+                        handle, 
+                        None,
+                        0,
+                        Some(std::mem::transmute(addr)),
+                        Some(dll_path_mem_alloc),
+                        0,
+                        None
+                    )
+                }?;
+            
+            thread
+        }
+        LaunchMethod::NtCreateThreadEx => {
+            let ntdll = unsafe { GetModuleHandleW(w!("ntdll.dll"))? };
+            let mut thread: HANDLE = HANDLE::default();
+            let pthread: *mut *mut c_void = &mut thread.0;
+
+            let _nt_create_thread_ex_call = dinvoke!(
+                ntdll.0,
+                "NtCreateThreadEx",
+                NtCreateThreadEx,
+                pthread,
+                THREAD_ALL_ACCESS.0,
+                ptr::null_mut(),
+                handle.0,
+                std::mem::transmute(addr),
+                dll_path_mem_alloc,
+                0,
+                0,
+                0,
+                0,
+                ptr::null_mut()
+            );
+
+            thread
+        }
+    };
 
     unsafe {
-        WaitForSingleObject(handle, u32::MAX);
+        WaitForSingleObject(thread, u32::MAX);
     }
     
     // unsafe {
@@ -123,5 +164,5 @@ fn to_wide(str: &str) -> Vec<u16> {
 
 fn main() {
     let args = Args::parse();
-    inject(&args.dll_path, &args.process_name).unwrap();
+    inject(&args.dll_path, &args.process_name, LaunchMethod::NtCreateThreadEx).unwrap();
 }
