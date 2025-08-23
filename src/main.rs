@@ -1,6 +1,9 @@
 mod injector;
 mod executor;
 mod utils;
+mod remote_process;
+mod remote_allocator;
+mod remote_thread;
 
 use std::path::PathBuf;
 use clap::Parser;
