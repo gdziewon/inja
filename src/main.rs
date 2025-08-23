@@ -7,7 +7,7 @@ use clap::Parser;
 
 
 use crate::executor::ShellcodeExecution;
-use crate::injector::inject;
+use crate::injector::Injector;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -18,6 +18,6 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-
-    inject(&args.dll_path, &args.process_name, ShellcodeExecution::NtCreateThreadEx).unwrap();
+    let injector = Injector::new(&args.process_name).unwrap();
+    injector.inject(&args.dll_path, ShellcodeExecution::ThreadHijacking).unwrap();
 }
