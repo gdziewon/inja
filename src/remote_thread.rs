@@ -1,4 +1,4 @@
-use windows::Win32::{Foundation::{CloseHandle, HANDLE}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{OpenThread, ResumeThread, SuspendThread, THREAD_ALL_ACCESS}}};
+use windows::Win32::{Foundation::{CloseHandle, HANDLE}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{GetThreadId, OpenThread, ResumeThread, SuspendThread, THREAD_ALL_ACCESS}}};
 
 #[repr(align(16))]
 pub struct Align16<T>(T);
@@ -15,21 +15,25 @@ impl<T> Align16<T> {
 
 pub struct RemoteThread {
     handle: HANDLE,
+    tid: u32,
     suspended: bool,
 }
 
 impl RemoteThread {
-    pub fn open(thread_id: u32) -> Result<Self, Box<dyn std::error::Error>> {
-        let handle = unsafe { OpenThread(THREAD_ALL_ACCESS, false, thread_id) }?;
+    pub fn open(tid: u32) -> Result<Self, Box<dyn std::error::Error>> {
+        let handle = unsafe { OpenThread(THREAD_ALL_ACCESS, false, tid) }?;
         Ok(Self {
             handle,
+            tid,
             suspended: false,
         })
     }
 
     pub fn from_handle(handle: HANDLE) -> Self {
+        let tid = unsafe { GetThreadId(handle) };
         Self {
             handle,
+            tid,
             suspended: false,
         }
     }

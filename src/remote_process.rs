@@ -8,6 +8,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Threading::OpenProcess;
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
+use windows::Win32::UI::WindowsAndMessaging::{GetGUIThreadInfo, GUITHREADINFO};
 
 use crate::remote_allocator::RemoteAllocator;
 use crate::remote_thread::RemoteThread;
@@ -119,7 +120,7 @@ impl RemoteProcess {
         Ok(remote_base.wrapping_add(offset))
     }
 
-    pub fn get_remote_thread(&self) -> Result<RemoteThread, Box<dyn std::error::Error>> {
+    pub fn get_remote_thread(&self, gui: bool) -> Result<RemoteThread, Box<dyn std::error::Error>> {
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }?;
         let mut te32 = THREADENTRY32 {
             dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
@@ -131,6 +132,16 @@ impl RemoteProcess {
         while unsafe { Thread32Next(snapshot, &mut te32) }.is_ok() {
             if te32.th32OwnerProcessID == self.pid {
                 let thread_id = te32.th32ThreadID;
+                if gui {
+                    let mut info = GUITHREADINFO {
+                        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+                        ..Default::default()
+                    };
+
+                    if unsafe { GetGUIThreadInfo(thread_id, &mut info).is_err() } {
+                        continue;
+                    }
+                }
                 unsafe { CloseHandle(snapshot) }?;
                 return RemoteThread::open(thread_id);
             }

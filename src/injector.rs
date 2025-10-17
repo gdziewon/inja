@@ -33,18 +33,6 @@ impl Injector {
 
         let executor = Executor::new(&self.process, remote_func_addr, dll_path_mem_alloc);
 
-        let thread_handle = executor.execute(shellcode_execution_method.clone())?;
-
-        match shellcode_execution_method {
-            ShellcodeExecution::ThreadHijacking => {
-                unsafe { CloseHandle(thread_handle)?; }
-            }
-            _ => {
-                unsafe { WaitForSingleObject(thread_handle, u32::MAX); }
-                unsafe { CloseHandle(thread_handle)?; }
-            }
-        }
-
-        Ok(())
+        executor.execute(shellcode_execution_method.clone())
     }
 }
