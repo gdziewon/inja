@@ -9,7 +9,6 @@ path = "src/main.rs"
 
 [dependencies]
 dynasmrt = {version = "3.2.1"}
-dinvk = "0.2.6"
 clap = { version = "4.5.41", features = ["derive"] }
 windows = {version = "0.61.3", features = ["Win32", "Wdk",
 "Win32_Security",
@@ -22,5 +21,6 @@ windows = {version = "0.61.3", features = ["Win32", "Wdk",
 "Win32_System_Diagnostics_Debug",
 "Win32_UI_WindowsAndMessaging",
 "Win32_UI_Input_KeyboardAndMouse",
+"Wdk_Foundation",
 "Wdk_System_SystemServices"
 ]}

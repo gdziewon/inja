@@ -23,5 +23,5 @@ fn main() {
     let args = Args::parse();
     let injector = Injector::new(&args.process_name).unwrap();
     // fixme - dont unwrap
-    injector.inject(&args.dll_path.canonicalize().unwrap(), ShellcodeExecution::SetWindowsHookEx).unwrap();
+    injector.inject(&args.dll_path.canonicalize().unwrap(), ShellcodeExecution::NtCreateThreadEx).unwrap();
 }

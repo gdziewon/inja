@@ -1,10 +1,4 @@
 use std::path::PathBuf;
-use windows::Win32::{
-    Foundation::CloseHandle,
-    System::{
-        Threading::WaitForSingleObject
-    },
-};
 
 use crate::remote_process::RemoteProcess;
 use crate::executor::{Executor, ShellcodeExecution};
@@ -33,6 +27,6 @@ impl Injector {
 
         let executor = Executor::new(&self.process, remote_func_addr, dll_path_mem_alloc);
 
-        executor.execute(shellcode_execution_method.clone())
+        executor.execute(shellcode_execution_method)
     }
 }
