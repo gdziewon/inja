@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::remote_process::RemoteProcess;
-use crate::executor::{Executor, ShellcodeExecution};
+use crate::executor::{Executor, ExecutionStrategy};
 
 pub struct Injector {
     process: RemoteProcess,
@@ -13,7 +13,7 @@ impl Injector {
         Ok(Injector { process })
     }
 
-    pub fn inject(&self, dll_path: &PathBuf, shellcode_execution_method: ShellcodeExecution) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn inject(&self, dll_path: &PathBuf, shellcode_execution_method: ExecutionStrategy) -> Result<(), Box<dyn std::error::Error>> {
         if !dll_path.exists() {
             return Err("dll doesnt exist".into());
         }

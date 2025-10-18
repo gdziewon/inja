@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 
-use crate::executor::ShellcodeExecution;
+use crate::executor::ExecutionStrategy;
 use crate::injector::Injector;
 
 #[derive(Parser, Debug)]
@@ -23,5 +23,5 @@ fn main() {
     let args = Args::parse();
     let injector = Injector::new(&args.process_name).unwrap();
     // fixme - dont unwrap
-    injector.inject(&args.dll_path.canonicalize().unwrap(), ShellcodeExecution::NtCreateThreadEx).unwrap();
+    injector.inject(&args.dll_path.canonicalize().unwrap(), ExecutionStrategy::SetWindowsHookEx).unwrap();
 }
