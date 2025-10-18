@@ -14,7 +14,7 @@ use crate::injector::Injector;
 
 #[derive(Parser, Debug)]
 struct Args {
-    dll_path: PathBuf,
+    dll_path: PathBuf, // gotta resolve it into full path
     process_name: String
 }
 
@@ -22,5 +22,6 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let injector = Injector::new(&args.process_name).unwrap();
-    injector.inject(&args.dll_path, ShellcodeExecution::ThreadHijacking).unwrap();
+    // fixme - dont unwrap
+    injector.inject(&args.dll_path.canonicalize().unwrap(), ShellcodeExecution::SetWindowsHookEx).unwrap();
 }
