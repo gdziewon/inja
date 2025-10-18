@@ -1,16 +1,20 @@
 use std::{ffi::c_void, thread::sleep};
 
 use dynasmrt::{dynasm, DynasmApi};
-use windows::{core::{w, BOOL}, Win32::{Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM}, System::LibraryLoader::LoadLibraryW, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SendMessageW, SetForegroundWindow, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP, WNDENUMPROC}}}};
+use windows::{core::{BOOL}, Win32::{Foundation::{HWND, LPARAM, LRESULT, WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SendMessageW, SetForegroundWindow, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP, WNDENUMPROC}}}};
 
-use crate::{remote_allocator::RemoteAllocator as _, remote_process::RemoteProcess};
-
+use crate::wrappers::{
+    RemoteAllocator as _,
+    HandleWrapper as _,
+    RemoteProcess,
+    RemoteModule
+};
 use super::ExecutionMethod;
 
 struct EnumWindowsData {
     target_pid: u32,
     remote_hook: HHOOK,
-    module: HMODULE,
+    module: RemoteModule,
     installed_hooks: Vec<HookData>,
 }
 
@@ -32,14 +36,14 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
             inject_func_addr as u64,
         )?;
 
-        let remote_shellcode = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(remote_shellcode, &stub)?;
+        let shellcode_mem = remote_process.alloc(stub.len(), true)?;
+        remote_process.write(shellcode_mem, &stub)?;
 
         let enum_callback = WNDENUMPROC::Some(enum_windows_callback);
         let data = EnumWindowsData {
             target_pid: remote_process.pid(),
-            remote_hook: HHOOK(remote_shellcode as *mut c_void),
-            module: unsafe { LoadLibraryW(w!("user32.dll")) }?,
+            remote_hook: HHOOK(shellcode_mem as *mut c_void),
+            module: RemoteModule::new("user32.dll")?,
             installed_hooks: Vec::new(),
         };
         unsafe { EnumWindows(enum_callback, LPARAM(&data as *const _ as isize)) }?;
@@ -109,7 +113,7 @@ unsafe extern "system" fn enum_windows_callback(
         SetWindowsHookExW(
             WH_CALLWNDPROC,
             remote_hook,
-            Some(data.module.into()),
+            Some(data.module.handle().into()),
             wnd_tid
         )
     };

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::remote_process::RemoteProcess;
+use crate::wrappers::RemoteProcess;
 use crate::executor::{Executor, ExecutionStrategy};
 
 pub struct Injector {

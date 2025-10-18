@@ -1,8 +1,10 @@
-use std::{ffi::{c_void, CString}, ptr};
+use std::{ffi::{c_void}, ptr, time::Duration};
 
-use windows::{core::{w, PCSTR}, Wdk::Foundation::OBJECT_ATTRIBUTES, Win32::{Foundation::{CloseHandle, HANDLE, NTSTATUS}, System::{LibraryLoader::{GetModuleHandleW, GetProcAddress}, Threading::{WaitForSingleObject, THREAD_ALL_ACCESS}}}};
+use windows::{Wdk::Foundation::OBJECT_ATTRIBUTES, Win32::{Foundation::{NTSTATUS}, System::Threading::{THREAD_ALL_ACCESS}}};
 
-use crate::remote_process::RemoteProcess;
+use crate::wrappers::{
+    HandleWrapper as _, RemoteModule, RemoteProcess, RemoteThread
+};
 
 use super::ExecutionMethod;
 
@@ -29,36 +31,38 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
         inject_func_addr: usize,
         dll_path_mem_alloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let ntdll = unsafe { GetModuleHandleW(w!("ntdll.dll"))? }; // todo: wrapper for modukles?
-        let nt_func_name = CString::new("NtCreateThreadEx")?;
-        let address = unsafe { GetProcAddress(ntdll, PCSTR(nt_func_name.as_ptr() as _)) };
-        if address.is_none() {
-            return Err("NtCreateThreadEx not found".into());
-        }
-        let create_thread_ex_func = unsafe { core::mem::transmute::<*mut core::ffi::c_void, NtCreateThreadEx>(address.unwrap() as *mut _) };
-        let mut thread: HANDLE = HANDLE::default();
-        let pthread: *mut *mut c_void = &mut thread.0;
+        let ntdll = RemoteModule::new("ntdll.dll")?;
+        let address = ntdll.get_func_addr("NtCreateThreadEx")?;
+        let create_thread_ex_func = unsafe { core::mem::transmute::<*mut core::ffi::c_void, NtCreateThreadEx>(address as *mut _) };
 
-        let ntstatus = unsafe { create_thread_ex_func(
-            pthread,
+        let mut remote_thread = RemoteThread::default();
+        let thread_handle_ptr = &mut remote_thread.handle_mut().0 as *mut _;
+
+        let process_handle_ptr = remote_process.handle().0 as *mut c_void;
+
+        let start_routine = inject_func_addr as *mut c_void;
+
+        let ntstatus = unsafe {
+            create_thread_ex_func(
+            thread_handle_ptr,
             THREAD_ALL_ACCESS.0,
             ptr::null_mut(),
-            remote_process.handle().0,
-            std::mem::transmute(inject_func_addr),
+            process_handle_ptr,
+            start_routine,
             dll_path_mem_alloc,
             0,
             0,
             0,
             0,
-            ptr::null_mut()
-        ) };
+            ptr::null_mut(),
+            )
+        };
 
         if ntstatus.0 != 0 {
             return Err(format!("NtCreateThreadEx failed with NTSTATUS: {:#x}", ntstatus.0).into());
         }
 
-        unsafe { WaitForSingleObject(thread, u32::MAX) };
-        unsafe { CloseHandle(thread) }?; // todo: use remote thread wrapper
+        remote_thread.wait_until_active(Duration::from_millis(u32::MAX as u64))?;
 
         Ok(())
     }

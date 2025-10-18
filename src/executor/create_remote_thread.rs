@@ -1,8 +1,10 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, time::Duration};
 
-use windows::Win32::{Foundation::CloseHandle, System::Threading::{CreateRemoteThread, WaitForSingleObject}};
+use windows::Win32::System::Threading::CreateRemoteThread;
 
-use crate::remote_process::RemoteProcess;
+use crate::wrappers::{
+    HandleWrapper as _, RemoteProcess, RemoteThread
+};
 
 use super::ExecutionMethod;
 
@@ -14,7 +16,8 @@ impl ExecutionMethod for CreateRemoteThreadExecutor {
         inject_func_addr: usize,
         dll_path_mem_alloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let thread = unsafe { // todo: use remotethread
+        let remote_thread = RemoteThread::from(
+            unsafe { // todo: use remotethread
             CreateRemoteThread(
                 remote_process.handle(),
                 None,
@@ -24,10 +27,9 @@ impl ExecutionMethod for CreateRemoteThreadExecutor {
                 0,
                 None
             )
-        }?;
+        }?);
 
-        unsafe { WaitForSingleObject(thread, u32::MAX) };
-        unsafe { CloseHandle(thread) }?;
+        remote_thread.wait_until_active(Duration::from_millis(u32::MAX as u64))?;
 
         Ok(())
     }

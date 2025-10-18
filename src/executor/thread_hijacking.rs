@@ -2,7 +2,10 @@ use std::ffi::c_void;
 
 use dynasmrt::{dynasm, DynasmApi};
 
-use crate::{remote_allocator::RemoteAllocator as _, remote_process::RemoteProcess};
+use crate::wrappers::{
+    RemoteAllocator as _,
+    RemoteProcess
+};
 
 use super::ExecutionMethod;
 
@@ -14,22 +17,21 @@ impl ExecutionMethod for ThreadHijackingExecutor {
         inject_func_addr: usize,
         dll_path_mem_alloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut remote_thread =remote_process.get_remote_thread(false)?;
-
+        let mut remote_thread = remote_process.get_remote_thread()?;
         remote_thread.suspend()?;
-        let mut context = remote_thread.get_context()?;
 
+        let mut context = remote_thread.get_context()?;
         let stub = create_trampoline_stub(
             dll_path_mem_alloc as u64,
             inject_func_addr as u64,
             context.get().Rip
         )?;
 
-        let remote_shellcode = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(remote_shellcode, &stub)?;
-        remote_process.flush_icache(remote_shellcode, stub.len())?;
+        let shellcode_mem = remote_process.alloc(stub.len(), true)?;
+        remote_process.write(shellcode_mem, &stub)?;
+        remote_process.flush_icache(shellcode_mem, stub.len())?;
 
-        context.get_mut().Rip = remote_shellcode as u64;
+        context.get_mut().Rip = shellcode_mem as u64;
 
         remote_thread.set_context(&context)?;
 

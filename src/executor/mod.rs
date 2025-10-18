@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use crate::remote_process::RemoteProcess;
+use crate::wrappers::RemoteProcess;
 
 mod create_remote_thread;
 mod nt_create_thread_ex;

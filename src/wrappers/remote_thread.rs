@@ -1,4 +1,8 @@
+use std::time::Duration;
+
 use windows::Win32::{Foundation::{CloseHandle, HANDLE}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{GetThreadId, OpenThread, ResumeThread, SuspendThread, THREAD_ALL_ACCESS}}};
+
+use crate::wrappers::HandleWrapper;
 
 #[repr(align(16))]
 pub struct Align16<T>(T);
@@ -13,10 +17,40 @@ impl<T> Align16<T> {
     }
 }
 
+#[derive(Default)]
 pub struct RemoteThread {
     handle: HANDLE,
     tid: u32,
     suspended: bool,
+}
+
+impl HandleWrapper for RemoteThread {
+    type HandleType = HANDLE;
+
+    fn handle(&self) -> Self::HandleType {
+        self.handle
+    }
+
+    fn handle_mut(&mut self) -> &mut Self::HandleType {
+        &mut self.handle
+    }
+
+    fn into_handle(self) -> Self::HandleType {
+        let h = self.handle;
+        std::mem::forget(self);
+        h
+    }
+}
+
+impl From<HANDLE> for RemoteThread {
+    fn from(handle: HANDLE) -> Self {
+        let tid = unsafe { GetThreadId(handle) };
+        Self {
+            handle,
+            tid,
+            suspended: false,
+        }
+    }
 }
 
 impl RemoteThread {
@@ -27,15 +61,6 @@ impl RemoteThread {
             tid,
             suspended: false,
         })
-    }
-
-    pub fn from_handle(handle: HANDLE) -> Self {
-        let tid = unsafe { GetThreadId(handle) };
-        Self {
-            handle,
-            tid,
-            suspended: false,
-        }
     }
 
     pub fn suspend(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -79,10 +104,13 @@ impl RemoteThread {
         Ok(())
     }
 
-    pub fn into_raw(self) -> HANDLE {
-        let h = self.handle;
-        std::mem::forget(self);
-        h
+    pub fn wait_until_active(&self, timeout: Duration) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { windows::Win32::System::Threading::WaitForSingleObject(self.handle, timeout.as_millis() as u32) };
+        match result {
+            windows::Win32::Foundation::WAIT_OBJECT_0 => Ok(()),
+            windows::Win32::Foundation::WAIT_TIMEOUT => Err("Wait timed out".into()),
+            _ => Err("WaitForSingleObject failed".into()),
+        }
     }
 }
 
