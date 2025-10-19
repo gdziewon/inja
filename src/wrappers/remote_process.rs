@@ -2,22 +2,41 @@ use std::ffi::{c_void, CStr, CString};
 
 use windows::core::{PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::System::Diagnostics::Debug::{FlushInstructionCache, WriteProcessMemory};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32First, Process32Next, Thread32First, Thread32Next, MODULEENTRY32W, PROCESSENTRY32, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
 use windows::Win32::System::Threading::OpenProcess;
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
-use windows::Win32::UI::WindowsAndMessaging::{GetGUIThreadInfo, GUITHREADINFO};
-
-use crate::remote_allocator::RemoteAllocator;
-use crate::remote_thread::RemoteThread;
+use super::RemoteAllocator;
+use crate::wrappers::remote_thread::RemoteThread;
 use crate::utils::to_wide;
+use crate::wrappers::HandleWrapper;
 
 
 pub struct RemoteProcess {
     handle: HANDLE,
     pid: u32,
+}
+
+impl HandleWrapper for RemoteProcess {
+    type HandleType = HANDLE;
+
+    fn handle(&self) -> Self::HandleType {
+        self.handle
+    }
+
+    fn handle_mut(&mut self) -> &mut Self::HandleType {
+        &mut self.handle
+    }
+
+    fn into_handle(self) -> Self::HandleType {
+        let h = self.handle;
+        std::mem::forget(self);
+        h
+    }
 }
 
 impl RemoteProcess {
@@ -42,10 +61,6 @@ impl RemoteProcess {
         }
 
         Err(format!("process '{}' not found", process_name).into())
-    }
-
-    pub fn handle(&self) -> HANDLE {
-        self.handle
     }
 
     pub fn pid(&self) -> u32 {
@@ -120,7 +135,7 @@ impl RemoteProcess {
         Ok(remote_base.wrapping_add(offset))
     }
 
-    pub fn get_remote_thread(&self, gui: bool) -> Result<RemoteThread, Box<dyn std::error::Error>> {
+    pub fn get_remote_thread(&self) -> Result<RemoteThread, Box<dyn std::error::Error>> {
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }?;
         let mut te32 = THREADENTRY32 {
             dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
@@ -132,21 +147,58 @@ impl RemoteProcess {
         while unsafe { Thread32Next(snapshot, &mut te32) }.is_ok() {
             if te32.th32OwnerProcessID == self.pid {
                 let thread_id = te32.th32ThreadID;
-                if gui {
-                    let mut info = GUITHREADINFO {
-                        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-                        ..Default::default()
-                    };
+                // if gui {
+                //     let mut info = GUITHREADINFO {
+                //         cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+                //         ..Default::default()
+                //     };
 
-                    if unsafe { GetGUIThreadInfo(thread_id, &mut info).is_err() } {
-                        continue;
-                    }
-                }
+                //     if unsafe { GetGUIThreadInfo(thread_id, &mut info).is_err() } {
+                //         continue;
+                //     }
+                // }
                 unsafe { CloseHandle(snapshot) }?;
                 return RemoteThread::open(thread_id);
             }
         }
         Err("No thread found in target process".into())
+    }
+}
+
+impl RemoteAllocator for RemoteProcess {
+    fn alloc(&self, size: usize, exec: bool) -> Result<*mut c_void, Box<dyn std::error::Error>> {
+        let prot = if exec { PAGE_EXECUTE_READWRITE } else { PAGE_READWRITE };
+        let addr = unsafe {
+            VirtualAllocEx(
+                self.handle(),
+                None,
+                size,
+                MEM_COMMIT | MEM_RESERVE,
+                prot,
+            )
+        };
+        if addr.is_null() {
+            return Err("Failed to allocate memory".into());
+        }
+        Ok(addr)
+    }
+
+    fn write(&self, addr: *mut c_void, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe {
+            WriteProcessMemory(
+                self.handle(),
+                addr,
+                data.as_ptr() as *const c_void,
+                data.len(),
+                None
+            )
+        }?;
+        Ok(())
+    }
+
+    fn flush_icache(&self, addr: *const c_void, size: usize) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe { FlushInstructionCache(self.handle(), Some(addr), size) }?;
+        Ok(())
     }
 }
 
