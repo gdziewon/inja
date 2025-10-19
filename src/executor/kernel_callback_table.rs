@@ -167,7 +167,7 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
 
         println!("KernelCallbackTable: {:?}", kct);
 
-        let stub = create_kernel_callback_shellcode(
+        let stub = build_shcode(
             dll_path_mem_alloc as u64,
             inject_func_addr as u64,
         )?;
@@ -224,7 +224,7 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
     }
 }
 
-fn create_kernel_callback_shellcode(
+fn build_shcode(
     dll_path_ptr: u64,
     inject_func_ptr: u64,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {

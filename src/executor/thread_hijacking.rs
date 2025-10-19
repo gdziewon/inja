@@ -21,7 +21,7 @@ impl ExecutionMethod for ThreadHijackingExecutor {
         remote_thread.suspend()?;
 
         let mut context = remote_thread.get_context()?;
-        let stub = create_trampoline_stub(
+        let stub = build_shcode(
             dll_path_mem_alloc as u64,
             inject_func_addr as u64,
             context.get().Rip
@@ -41,7 +41,7 @@ impl ExecutionMethod for ThreadHijackingExecutor {
     }
 }
 
-fn create_trampoline_stub(
+fn build_shcode(
     dll_path_ptr: u64,
     inject_func_ptr: u64,
     original_rip: u64
