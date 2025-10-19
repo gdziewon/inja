@@ -19,8 +19,10 @@ windows = {version = "0.61.3", features = ["Win32", "Wdk",
 "Win32_System_SystemServices",
 "Win32_System_Diagnostics_ToolHelp",
 "Win32_System_Diagnostics_Debug",
+"Win32_System_DataExchange",
 "Win32_UI_WindowsAndMessaging",
 "Win32_UI_Input_KeyboardAndMouse",
 "Wdk_Foundation",
+"Wdk_System_Threading",
 "Wdk_System_SystemServices"
 ]}

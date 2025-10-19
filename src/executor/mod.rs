@@ -4,13 +4,15 @@ use crate::wrappers::RemoteProcess;
 
 mod create_remote_thread;
 mod nt_create_thread_ex;
-mod set_windows_hook_ex;
 mod thread_hijacking;
+mod set_windows_hook_ex;
+mod kernel_callback_table;
 
 use create_remote_thread::CreateRemoteThreadExecutor;
 use nt_create_thread_ex::NtCreateThreadExExecutor;
 use set_windows_hook_ex::SetWindowsHookExExecutor;
 use thread_hijacking::ThreadHijackingExecutor;
+use kernel_callback_table::KernelCallbackTableExecutor;
 
 
 #[derive(Debug)]
@@ -19,6 +21,7 @@ pub enum ExecutionStrategy {
     NtCreateThreadEx,
     ThreadHijacking,
     SetWindowsHookEx,
+    KernelCallbackTable,
 }
 
 pub trait ExecutionMethod {
@@ -66,6 +69,11 @@ impl Executor<'_> {
                 self.dll_path_mem_alloc,
             ),
             ExecutionStrategy::SetWindowsHookEx => SetWindowsHookExExecutor::execute(
+                self.remote_process,
+                self.inject_func_addr,
+                self.dll_path_mem_alloc,
+            ),
+            ExecutionStrategy::KernelCallbackTable => KernelCallbackTableExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
                 self.dll_path_mem_alloc,

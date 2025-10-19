@@ -1,27 +1,16 @@
 use std::{ffi::c_void, thread::sleep};
 
 use dynasmrt::{dynasm, DynasmApi};
-use windows::{core::{BOOL}, Win32::{Foundation::{HWND, LPARAM, LRESULT, WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SendMessageW, SetForegroundWindow, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP, WNDENUMPROC}}}};
+use windows::{Win32::{Foundation::{LPARAM, LRESULT, WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}}};
 
 use crate::wrappers::{
     RemoteAllocator as _,
     HandleWrapper as _,
     RemoteProcess,
-    RemoteModule
+    RemoteModule,
+    Hook
 };
 use super::ExecutionMethod;
-
-struct EnumWindowsData {
-    target_pid: u32,
-    remote_hook: HHOOK,
-    module: RemoteModule,
-    installed_hooks: Vec<HookData>,
-}
-
-struct HookData {
-    hook_handle: HHOOK,
-    window_handle: HWND,
-}
 
 pub(super) struct SetWindowsHookExExecutor;
 
@@ -39,27 +28,29 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
         let shellcode_mem = remote_process.alloc(stub.len(), true)?;
         remote_process.write(shellcode_mem, &stub)?;
 
-        let enum_callback = WNDENUMPROC::Some(enum_windows_callback);
-        let data = EnumWindowsData {
-            target_pid: remote_process.pid(),
-            remote_hook: HHOOK(shellcode_mem as *mut c_void),
-            module: RemoteModule::new("user32.dll")?,
-            installed_hooks: Vec::new(),
-        };
-        unsafe { EnumWindows(enum_callback, LPARAM(&data as *const _ as isize)) }?;
+        let windows = remote_process.get_windows()?;
+        println!("Found {} windows in target process", windows.len());
 
-        println!("Installed {} hooks", data.installed_hooks.len());
+        let remote_hook: Hook = unsafe { std::mem::transmute(shellcode_mem) };
+        let module = RemoteModule::new("user32.dll")?;
 
-        // todo: hook and window wrappers?
-        for HookData { hook_handle, window_handle } in &data.installed_hooks {
-            unsafe {
-                let space_key = WPARAM(VK_SPACE.0 as usize);
-                let _ = SetForegroundWindow(*window_handle);
-                SendMessageW(*window_handle, WM_KEYDOWN, Some(space_key), None);
-                sleep(std::time::Duration::from_millis(10));
-                SendMessageW(*window_handle, WM_KEYUP, Some(space_key), None);
-                UnhookWindowsHookEx(*hook_handle)?;
+        for window in &windows {
+            let hook = window.set_windows_hook_ex(
+                WH_CALLWNDPROC,
+                Some(remote_hook),
+                Some(&module),
+            );
+            if hook.is_err() {
+                println!("Failed to install hook on window {:?} (thread id: {}): {:?}", window.handle(), window.tid(), hook.err());
+                continue;
             }
+
+            println!("Installed hook on window {:?} (thread id: {})", window.handle(), window.tid());
+            let space_key = WPARAM(VK_SPACE.0 as usize);
+            window.set_foreground()?;
+            window.send_msg(WM_KEYDOWN, Some(space_key), None);
+            sleep(std::time::Duration::from_millis(10));
+            window.send_msg(WM_KEYUP, Some(space_key), None);
         }
 
         Ok(())
@@ -90,39 +81,4 @@ fn create_next_hook_ex_shellcode(
     let buf = ops.finalize().unwrap();
     println!("{:#04X?}, length: {}", buf.to_vec(), buf.to_vec().len());
     Ok(buf.to_vec())
-}
-
-unsafe extern "system" fn enum_windows_callback(
-    hwnd: HWND,
-    lparam: LPARAM
-) -> BOOL {
-    let data = unsafe { &mut *(lparam.0 as *mut EnumWindowsData) };
-    let pid = data.target_pid;
-    let mut wnd_pid: u32 = 0;
-    let wnd_tid = unsafe { GetWindowThreadProcessId(hwnd, Some(&mut wnd_pid)) };
-    if wnd_tid == 0 {
-        return BOOL(1);
-    }
-    if wnd_pid != pid || !unsafe { IsWindowVisible(hwnd).as_bool() } {
-        return BOOL(1);
-    }
-
-    let remote_hook: Option<unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT> =
-        unsafe { std::mem::transmute(data.remote_hook.0) };
-    let hook = unsafe {
-        SetWindowsHookExW(
-            WH_CALLWNDPROC,
-            remote_hook,
-            Some(data.module.handle().into()),
-            wnd_tid
-        )
-    };
-    if hook.is_ok() {
-        data.installed_hooks.push(HookData {
-            hook_handle: hook.unwrap(),
-            window_handle: hwnd,
-        });
-    }
-
-    BOOL(1)
 }
