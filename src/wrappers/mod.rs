@@ -8,6 +8,7 @@ use std::ffi::c_void;
 pub use remote_process::RemoteProcess;
 pub use remote_thread::RemoteThread;
 pub use remote_module::RemoteModule;
+pub use remote_window::{RemoteWindow, Hook};
 
 pub trait HandleWrapper {
     type HandleType;

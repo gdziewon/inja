@@ -9,7 +9,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
-use windows::Win32::System::Threading::OpenProcess;
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 use super::RemoteAllocator;
@@ -77,7 +77,7 @@ impl RemoteProcess {
     fn from_pid(pid: u32) -> Result<Self, Box<dyn std::error::Error>> {
         let handle = unsafe {
             OpenProcess(
-                PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_CREATE_THREAD,
+                PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION,
                 false,
                 pid
             )?
@@ -99,7 +99,7 @@ impl RemoteProcess {
     }
 
     // SAFETY: Caller must ensure that the lparam points to a valid EnumWindowsData
-    pub unsafe extern "system" fn enum_windows_callback(
+    unsafe extern "system" fn enum_windows_callback(
         hwnd: HWND,
         lparam: LPARAM
     ) -> BOOL {
@@ -117,6 +117,41 @@ impl RemoteProcess {
 
         data.windows.push(window);
         BOOL(1)
+    }
+
+    pub fn query_info<T>(&self, info_class: PROCESSINFOCLASS) -> Result<T, Box<dyn std::error::Error>> {
+        let mut buffer: T = unsafe { std::mem::zeroed() }; // todo: look into this func
+        let mut return_length: u32 = 0;
+
+        let status = unsafe {
+            NtQueryInformationProcess(
+                self.handle(),
+                info_class,
+                &mut buffer as *mut _ as *mut c_void,
+                std::mem::size_of::<T>() as u32,
+                &mut return_length,
+            )
+        };
+
+        if status.is_err() {
+            return Err(format!("NtQueryInformationProcess failed: {:?}", status).into());
+        }
+
+        Ok(buffer)
+    }
+
+    pub fn read_memory(&self, addr: *const c_void, size: usize) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut buffer = vec![0u8; size];
+        unsafe {
+            ReadProcessMemory(
+                self.handle(),
+                addr as *mut c_void,
+                buffer.as_mut_ptr() as *mut c_void,
+                size,
+                None,
+            )
+        }?;
+        Ok(buffer)
     }
 
     pub fn write_wide_string(&self, s: &str) -> Result<*mut c_void, Box<dyn std::error::Error>> {

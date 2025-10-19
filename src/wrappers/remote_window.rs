@@ -8,19 +8,19 @@ pub struct RemoteHook {
     hook: HHOOK,
 }
 
-#[derive(Default)]
-pub struct RemoteWindow {
-    hwnd: HWND,
-    pid: u32,
-    tid: u32,
-}
-
 impl Drop for RemoteHook {
     fn drop(&mut self) {
         unsafe {
             let _ = UnhookWindowsHookEx(self.hook);
         }
     }
+}
+
+#[derive(Default)]
+pub struct RemoteWindow {
+    hwnd: HWND,
+    pid: u32,
+    tid: u32,
 }
 
 impl HandleWrapper for RemoteWindow {

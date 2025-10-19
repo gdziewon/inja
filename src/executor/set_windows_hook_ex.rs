@@ -7,7 +7,8 @@ use crate::wrappers::{
     RemoteAllocator as _,
     HandleWrapper as _,
     RemoteProcess,
-    RemoteModule
+    RemoteModule,
+    Hook
 };
 use super::ExecutionMethod;
 
@@ -30,13 +31,13 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
         let windows = remote_process.get_windows()?;
         println!("Found {} windows in target process", windows.len());
 
-        let remote_hook: Option<unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT> = unsafe { std::mem::transmute(shellcode_mem) };
+        let remote_hook: Hook = unsafe { std::mem::transmute(shellcode_mem) };
         let module = RemoteModule::new("user32.dll")?;
 
         for window in &windows {
             let hook = window.set_windows_hook_ex(
                 WH_CALLWNDPROC,
-                remote_hook,
+                Some(remote_hook),
                 Some(&module),
             );
             if hook.is_err() {
