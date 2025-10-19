@@ -1,8 +1,9 @@
 use std::ffi::{c_void, CStr, CString};
 
-use windows::core::{PCSTR, PCWSTR};
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
-use windows::Win32::System::Diagnostics::Debug::{FlushInstructionCache, WriteProcessMemory};
+use windows::core::{BOOL, PCSTR, PCWSTR};
+use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
+use windows::Win32::System::Diagnostics::Debug::{FlushInstructionCache, ReadProcessMemory, WriteProcessMemory};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32First, Process32Next, Thread32First, Thread32Next, MODULEENTRY32W, PROCESSENTRY32, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32
 };
@@ -10,11 +11,17 @@ use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
 use windows::Win32::System::Threading::OpenProcess;
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
+use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 use super::RemoteAllocator;
 use crate::wrappers::remote_thread::RemoteThread;
 use crate::utils::to_wide;
+use crate::wrappers::remote_window::RemoteWindow;
 use crate::wrappers::HandleWrapper;
 
+pub struct EnumWindowsData {
+    target_pid: u32,
+    windows: Vec<RemoteWindow>,
+}
 
 pub struct RemoteProcess {
     handle: HANDLE,
@@ -78,6 +85,40 @@ impl RemoteProcess {
         Ok(Self { handle, pid })
     }
 
+    pub fn get_windows(&self) -> Result<Vec<RemoteWindow>, Box<dyn std::error::Error>> {
+        let mut enum_windows_data = EnumWindowsData {
+            target_pid: self.pid,
+            windows: Vec::new(),
+        };
+
+        unsafe {
+            EnumWindows(Some(Self::enum_windows_callback), LPARAM(&mut enum_windows_data as *mut _ as isize))?;
+        }
+
+        Ok(enum_windows_data.windows)
+    }
+
+    // SAFETY: Caller must ensure that the lparam points to a valid EnumWindowsData
+    pub unsafe extern "system" fn enum_windows_callback(
+        hwnd: HWND,
+        lparam: LPARAM
+    ) -> BOOL {
+        let data = unsafe { &mut *(lparam.0 as *mut EnumWindowsData) };
+
+        let window = RemoteWindow::from_handle(hwnd);
+        if window.is_err() {
+            return BOOL(1);
+        }
+
+        let window = window.unwrap();
+        if window.pid() != data.target_pid || !window.is_visible() {
+            return BOOL(1);
+        }
+
+        data.windows.push(window);
+        BOOL(1)
+    }
+
     pub fn write_wide_string(&self, s: &str) -> Result<*mut c_void, Box<dyn std::error::Error>> {
         let mut wide = to_wide(s);
         if *wide.last().unwrap_or(&0) != 0u16 {
@@ -94,7 +135,7 @@ impl RemoteProcess {
         Ok(addr)
     }
 
-    fn find_module_base(&self, module_name: &str) -> Result<usize, Box<dyn std::error::Error>> {
+    fn find_module_base(&self, module_name: &str) -> Result<usize, Box<dyn std::error::Error>> { // todo: refactor
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, self.pid) }?;
         let mut me32 = MODULEENTRY32W {
             dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32,
@@ -119,7 +160,7 @@ impl RemoteProcess {
     }
 
     pub fn get_remote_func_address(&self, module_name: &str, func_name: &str) -> Result<usize, Box<dyn std::error::Error>> {
-        let module_wide = to_wide(module_name);
+        let module_wide = to_wide(module_name); // todo: refactor
         let local_mod = unsafe { GetModuleHandleW(PCWSTR(module_wide.as_ptr()))? };
 
         let c_func = CString::new(func_name)?;
@@ -146,19 +187,9 @@ impl RemoteProcess {
 
         while unsafe { Thread32Next(snapshot, &mut te32) }.is_ok() {
             if te32.th32OwnerProcessID == self.pid {
-                let thread_id = te32.th32ThreadID;
-                // if gui {
-                //     let mut info = GUITHREADINFO {
-                //         cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-                //         ..Default::default()
-                //     };
-
-                //     if unsafe { GetGUIThreadInfo(thread_id, &mut info).is_err() } {
-                //         continue;
-                //     }
-                // }
+                let thread_id: u32 = te32.th32ThreadID;
                 unsafe { CloseHandle(snapshot) }?;
-                return RemoteThread::open(thread_id);
+                return RemoteThread::open(thread_id); // todo: pick right thread?
             }
         }
         Err("No thread found in target process".into())

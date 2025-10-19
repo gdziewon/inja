@@ -4,8 +4,8 @@ use crate::wrappers::RemoteProcess;
 
 mod create_remote_thread;
 mod nt_create_thread_ex;
-mod set_windows_hook_ex;
 mod thread_hijacking;
+mod set_windows_hook_ex;
 
 use create_remote_thread::CreateRemoteThreadExecutor;
 use nt_create_thread_ex::NtCreateThreadExExecutor;

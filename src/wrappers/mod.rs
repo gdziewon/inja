@@ -1,6 +1,7 @@
 mod remote_process;
 mod remote_thread;
 mod remote_module;
+mod remote_window;
 
 use std::ffi::c_void;
 
