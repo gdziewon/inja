@@ -9,7 +9,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use windows::Win32::System::Threading::{CreateRemoteThread, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 use super::RemoteAllocator;
@@ -26,6 +26,7 @@ pub struct EnumWindowsData {
 pub struct RemoteProcess {
     handle: HANDLE,
     pid: u32,
+    thread_ids: Vec<u32>,
 }
 
 impl HandleWrapper for RemoteProcess {
@@ -73,7 +74,7 @@ impl RemoteProcess {
     pub fn pid(&self) -> u32 {
         self.pid
     }
-
+    
     fn from_pid(pid: u32) -> Result<Self, Box<dyn std::error::Error>> {
         let handle = unsafe {
             OpenProcess(
@@ -82,7 +83,32 @@ impl RemoteProcess {
                 pid
             )?
         };
-        Ok(Self { handle, pid })
+        Ok(Self { handle, pid, thread_ids: Vec::new() })
+    }
+    
+    pub fn thread_ids(&self) -> &Vec<u32> {
+        &self.thread_ids
+    }
+
+    pub fn get_thread_ids(&self) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }?;
+        let mut te32 = THREADENTRY32 {
+            dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+
+        unsafe { Thread32First(snapshot, &mut te32) }?;
+
+        let mut thread_ids = Vec::new();
+        while unsafe { Thread32Next(snapshot, &mut te32) }.is_ok() {
+            if te32.th32OwnerProcessID == self.pid {
+                thread_ids.push(te32.th32ThreadID);
+            }
+        }
+        unsafe { CloseHandle(snapshot)?; }
+        
+        println!("For pid = {}; found thread id(s): {:?}", self.pid(), thread_ids);
+        Ok(thread_ids)
     }
 
     pub fn get_windows(&self) -> Result<Vec<RemoteWindow>, Box<dyn std::error::Error>> {
@@ -170,7 +196,7 @@ impl RemoteProcess {
         Ok(addr)
     }
 
-    fn find_module_base(&self, module_name: &str) -> Result<usize, Box<dyn std::error::Error>> { // todo: refactor
+    pub fn find_module_base(&self, module_name: &str) -> Result<usize, Box<dyn std::error::Error>> { // todo: refactor
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, self.pid) }?;
         let mut me32 = MODULEENTRY32W {
             dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32,
@@ -224,10 +250,30 @@ impl RemoteProcess {
             if te32.th32OwnerProcessID == self.pid {
                 let thread_id: u32 = te32.th32ThreadID;
                 unsafe { CloseHandle(snapshot) }?;
-                return RemoteThread::open(thread_id); // todo: pick right thread?
+                return RemoteThread::open(thread_id, THREAD_ALL_ACCESS); // todo: pick right thread?
             }
         }
         Err("No thread found in target process".into())
+    }
+
+    pub fn free_library(&self, lib_mod_handle: usize) -> Result<(), Box<dyn std::error::Error>> { // todo: fix/refactor this is for unloading DLLs
+        let free_library_addr = self.get_remote_func_address("kernel32.dll", "FreeLibrary")?;
+        let remote_thread = RemoteThread::from(
+            unsafe { 
+                CreateRemoteThread(
+                    self.handle,
+                    None,
+                    0,
+                    Some(std::mem::transmute(free_library_addr)),
+                    Some(lib_mod_handle as *const c_void),
+                    0,
+                    None    
+            )}
+        ?);
+
+        remote_thread.wait_until_active(std::time::Duration::from_millis(u32::MAX as u64))?;
+
+        Ok(())
     }
 }
 

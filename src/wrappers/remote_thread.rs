@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use windows::Win32::{Foundation::{CloseHandle, HANDLE}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{GetThreadId, OpenThread, ResumeThread, SuspendThread, THREAD_ALL_ACCESS}}};
+use windows::Win32::{Foundation::{CloseHandle, HANDLE, PAPCFUNC}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{GetThreadId, OpenThread, QueueUserAPC, ResumeThread, SuspendThread, THREAD_ACCESS_RIGHTS, THREAD_ALL_ACCESS}}};
 
 use crate::wrappers::HandleWrapper;
 
@@ -54,8 +54,8 @@ impl From<HANDLE> for RemoteThread {
 }
 
 impl RemoteThread {
-    pub fn open(tid: u32) -> Result<Self, Box<dyn std::error::Error>> {
-        let handle = unsafe { OpenThread(THREAD_ALL_ACCESS, false, tid) }?;
+    pub fn open(tid: u32, dw_desired_access: THREAD_ACCESS_RIGHTS) -> Result<Self, Box<dyn std::error::Error>> {
+        let handle = unsafe { OpenThread(dw_desired_access, false, tid) }?;
         Ok(Self {
             handle,
             tid,
@@ -111,6 +111,15 @@ impl RemoteThread {
             windows::Win32::Foundation::WAIT_TIMEOUT => Err("Wait timed out".into()),
             _ => Err("WaitForSingleObject failed".into()),
         }
+    }
+
+    pub fn queue_user_apc(&self, apc_fn_addr: PAPCFUNC, apc_param: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let result = unsafe { QueueUserAPC(std::mem::transmute(apc_fn_addr), self.handle, apc_param) };
+        if result == 0 {
+            return Err(format!("QueueUserAPC failed: {}", std::io::Error::last_os_error()).into());
+        }
+
+        Ok(())
     }
 }
 
