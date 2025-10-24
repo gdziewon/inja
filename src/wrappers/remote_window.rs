@@ -11,7 +11,10 @@ pub struct RemoteHook {
 impl Drop for RemoteHook {
     fn drop(&mut self) {
         unsafe {
-            let _ = UnhookWindowsHookEx(self.hook);
+            if UnhookWindowsHookEx(self.hook).is_err() {
+                let err = std::io::Error::last_os_error();
+                eprintln!("UnhookWindowsHookEx failed for hook {:?}: {}", self.hook, err);
+            }
         }
     }
 }

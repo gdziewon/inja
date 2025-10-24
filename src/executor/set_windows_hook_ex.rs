@@ -1,7 +1,7 @@
 use std::{ffi::c_void, thread::sleep};
 
-use dynasmrt::{dynasm, DynasmApi};
-use windows::{Win32::{Foundation::{LPARAM, LRESULT, WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}}};
+use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
+use windows::Win32::{Foundation::{LPARAM, LRESULT, WPARAM}, System::Memory::{VirtualFreeEx, MEM_RELEASE}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}};
 
 use crate::wrappers::{
     RemoteAllocator as _,
@@ -48,10 +48,11 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
             println!("Installed hook on window {:?} (thread id: {})", window.handle(), window.tid());
             let space_key = WPARAM(VK_SPACE.0 as usize);
             window.set_foreground()?;
-            window.send_msg(WM_KEYDOWN, Some(space_key), None);
+            //window.send_msg(WM_KEYDOWN, Some(space_key), None);
             sleep(std::time::Duration::from_millis(10));
             window.send_msg(WM_KEYUP, Some(space_key), None);
         }
+        unsafe { VirtualFreeEx(remote_process.handle(), shellcode_mem, 0, MEM_RELEASE)?; }
 
         Ok(())
     }
@@ -67,15 +68,23 @@ fn build_shcode(
         ; .arch x64
         ; sub rsp, 0x28
 
+        ; cmp BYTE [->finished], 1    // compare byte at finished with 1
+        ; je ->ret
+
         ; mov rcx, QWORD dll_path_ptr as i64  // inject
         ; mov rax, QWORD inject_func_ptr as i64
         ; call rax
 
+        ; mov BYTE [->finished], 1
+
+        ; ->ret:
         ; add rsp, 0x28
 
         ; xor rax, rax // return 0 from a hooked function
 
         ; ret
+        ; ->finished:
+        ; nop
     );
 
     let buf = ops.finalize().unwrap();
