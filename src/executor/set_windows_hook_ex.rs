@@ -1,14 +1,10 @@
-use std::{ffi::c_void, thread::sleep};
+use std::thread::sleep;
 
 use dynasmrt::{dynasm, DynasmApi};
-use windows::{Win32::{Foundation::{LPARAM, LRESULT, WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}}};
+use windows::{Win32::{Foundation::WPARAM, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}}};
 
 use crate::wrappers::{
-    RemoteAllocator as _,
-    HandleWrapper as _,
-    RemoteProcess,
-    RemoteModule,
-    Hook
+    AllocatedMemory, HandleWrapper as _, Hook, LocalModule, RemoteAllocator as _, RemoteProcess
 };
 use super::ExecutionMethod;
 
@@ -18,21 +14,21 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_mem_alloc: &AllocatedMemory,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let stub = build_shcode(
-            dll_path_mem_alloc as u64,
+            dll_path_mem_alloc.as_ptr() as u64,
             inject_func_addr as u64,
         )?;
 
         let shellcode_mem = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(shellcode_mem, &stub)?;
+        shellcode_mem.write(&stub)?;
 
         let windows = remote_process.get_windows()?;
         println!("Found {} windows in target process", windows.len());
 
-        let remote_hook: Hook = unsafe { std::mem::transmute(shellcode_mem) };
-        let module = RemoteModule::new("user32.dll")?;
+        let remote_hook: Hook = unsafe { std::mem::transmute(shellcode_mem.as_ptr()) };
+        let module = LocalModule::from_name("user32.dll")?;
 
         for window in &windows {
             let hook = window.set_windows_hook_ex(

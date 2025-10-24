@@ -1,6 +1,4 @@
-use std::ffi::c_void;
-
-use crate::wrappers::RemoteProcess;
+use crate::wrappers::{AllocatedMemory, RemoteProcess};
 
 mod create_remote_thread;
 mod nt_create_thread_ex;
@@ -30,22 +28,22 @@ pub trait ExecutionMethod {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_mem_alloc: &AllocatedMemory,
     ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 pub struct Executor<'a> {
     remote_process: &'a RemoteProcess,
     inject_func_addr: usize,
-    dll_path_mem_alloc: *mut c_void,
+    dll_path_mem_alloc: &'a AllocatedMemory,
 }
 
 impl Executor<'_> {
-    pub fn new(
-        remote_process: &RemoteProcess,
+    pub fn new<'a>(
+        remote_process: &'a RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void
-    ) -> Executor {
+        dll_path_mem_alloc: &'a AllocatedMemory,
+    ) -> Executor<'a> {
         Executor {
             remote_process,
             inject_func_addr,

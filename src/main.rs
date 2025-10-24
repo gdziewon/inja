@@ -22,4 +22,5 @@ fn main() {
     let injector = Injector::new(&args.process_name).unwrap();
     // fixme - dont unwrap
     injector.inject(&args.dll_path.canonicalize().unwrap(), ExecutionStrategy::QueueUserAPC).unwrap();
+    println!("{}", std::io::Error::last_os_error());
 }

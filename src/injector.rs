@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::wrappers::RemoteProcess;
+use crate::wrappers::{Module as _, RemoteProcess};
 use crate::executor::{Executor, ExecutionStrategy};
 
 pub struct Injector {
@@ -22,11 +22,14 @@ impl Injector {
             .to_str()
             .ok_or_else(|| "Couldnt convert path to &str")?;
 
-        let remote_func_addr = self.process.get_remote_func_address("kernel32.dll", "LoadLibraryW")?;
+        let remote_module = self.process.get_module("kernel32.dll")?;
+        let remote_func_addr = remote_module.get_func_addr("LoadLibraryW")?;
         let dll_path_mem_alloc = self.process.write_wide_string(dll_str)?;
 
-        let executor = Executor::new(&self.process, remote_func_addr, dll_path_mem_alloc);
+        let executor = Executor::new(&self.process, remote_func_addr, &dll_path_mem_alloc);
 
-        executor.execute(shellcode_execution_method)
+        executor.execute(shellcode_execution_method)?;
+        std::mem::forget(dll_path_mem_alloc); // todo: this is workaround, fix later
+        Ok(())
     }
 }

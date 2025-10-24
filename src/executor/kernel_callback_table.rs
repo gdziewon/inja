@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::{LPARAM, WPARAM}, System::{DataExchange::COPYDATASTRUCT, Threading::{PEB, PROCESS_BASIC_INFORMATION}}, UI::WindowsAndMessaging::WM_COPYDATA}};
 use dynasmrt::{dynasm, DynasmApi};
-use crate::{utils::to_wide, wrappers::{HandleWrapper as _, RemoteAllocator as _, RemoteProcess}};
+use crate::{utils::to_wide, wrappers::{AllocatedMemory, HandleWrapper as _, RemoteAllocator as _, RemoteProcess}};
 
 use super::ExecutionMethod;
 
@@ -151,45 +151,39 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_mem_alloc: &AllocatedMemory,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let pbi = remote_process.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
 
         println!("PEB address: {:?}", pbi.PebBaseAddress);
-        let peb = remote_process.read_memory(pbi.PebBaseAddress as *const c_void, std::mem::size_of::<PebPartial>())?;
-        let mut peb = unsafe { std::ptr::read(peb.as_ptr() as *const PebPartial) };
+        let mut peb: PebPartial = unsafe {
+            remote_process.read_struct(pbi.PebBaseAddress as *const c_void)?
+        };
 
         println!("KernelCallbackTable address: {:?}", peb.kernel_callback_table);
 
         let kct_addr = peb.kernel_callback_table;
-        let kct = remote_process.read_memory(kct_addr, std::mem::size_of::<KernelCallbackTable>())?;
-        let mut kct = unsafe { std::ptr::read(kct.as_ptr() as *const KernelCallbackTable) };
+        let mut kct: KernelCallbackTable = unsafe {
+            remote_process.read_struct(peb.kernel_callback_table)?
+        };
 
         println!("KernelCallbackTable: {:?}", kct);
 
         let stub = build_shcode(
-            dll_path_mem_alloc as u64,
+            dll_path_mem_alloc.as_ptr() as u64,
             inject_func_addr as u64,
         )?;
-        let shellcode_mem = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(shellcode_mem, &stub)?;
+        let shellcode_alloc = remote_process.alloc(stub.len(), true)?;
+        shellcode_alloc.write(&stub)?;
 
-        kct.__fnCOPYDATA = shellcode_mem as usize;
-        let newkct_addr = remote_process.alloc(std::mem::size_of::<KernelCallbackTable>(), true)?;
-        remote_process.write(newkct_addr, unsafe {
-            std::slice::from_raw_parts(
-                &kct as *const KernelCallbackTable as *const u8,
-                std::mem::size_of::<KernelCallbackTable>(),
-            )
-        })?;
+        kct.__fnCOPYDATA = shellcode_alloc.as_ptr() as usize;
+        let newkct_alloc = remote_process.alloc(std::mem::size_of::<KernelCallbackTable>(), true)?;
+        newkct_alloc.write_struct(&kct)?;
 
-        peb.kernel_callback_table = newkct_addr;
-        remote_process.write(pbi.PebBaseAddress as *mut c_void, unsafe {
-            std::slice::from_raw_parts(
-                &peb as *const PebPartial as *const u8,
-                std::mem::size_of::<PebPartial>(),
-            )
-        })?;
+        peb.kernel_callback_table = newkct_alloc.as_ptr();
+        unsafe {
+            remote_process.write_struct(pbi.PebBaseAddress as *mut c_void, &peb)?
+        };
 
         println!("Triggering shellcode via WM_COPYDATA");
 
@@ -211,12 +205,9 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
         println!("Restoring previous __fnCOPYDATA");
 
         peb.kernel_callback_table = kct_addr;
-        remote_process.write(pbi.PebBaseAddress as *mut c_void, unsafe {
-            std::slice::from_raw_parts(
-                &peb as *const PebPartial as *const u8,
-                std::mem::size_of::<PebPartial>(),
-            )
-        })?;
+        unsafe {
+            remote_process.write_struct(pbi.PebBaseAddress as *mut c_void, &peb)?
+        };
 
         println!("Restored previous __fnCOPYDATA");
 

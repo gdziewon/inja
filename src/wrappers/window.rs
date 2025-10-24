@@ -1,6 +1,6 @@
 use windows::Win32::{Foundation::{HWND, LPARAM, LRESULT, WPARAM}, UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindowVisible, SendMessageW, SetForegroundWindow, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, WINDOWS_HOOK_ID}};
 
-use crate::wrappers::{HandleWrapper, RemoteModule};
+use crate::wrappers::{HandleWrapper, LocalModule};
 
 pub type Hook = unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT;
 
@@ -16,11 +16,25 @@ impl Drop for RemoteHook {
     }
 }
 
+trait Window : HandleWrapper {}
+
+
 #[derive(Default)]
 pub struct RemoteWindow {
     hwnd: HWND,
     pid: u32,
     tid: u32,
+}
+
+impl Window for RemoteWindow {}
+
+impl From<HWND> for RemoteWindow {
+    fn from(hwnd: HWND) -> Self {
+        let mut pid: u32 = 0;
+        let tid = unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+
+        Self { hwnd, pid, tid }
+    }
 }
 
 impl HandleWrapper for RemoteWindow {
@@ -33,31 +47,10 @@ impl HandleWrapper for RemoteWindow {
     fn handle_mut(&mut self) -> &mut Self::HandleType {
         &mut self.hwnd
     }
-
-    fn into_handle(self) -> Self::HandleType {
-        let h = self.hwnd;
-        std::mem::forget(self);
-        h
-    }
 }
 
 impl RemoteWindow {
-    pub fn from_handle(hwnd: HWND) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut pid: u32 = 0;
-        let tid = unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-
-        if tid == 0 {
-            return Err("Failed to get window thread/process ID".into());
-        }
-
-        Ok(Self {
-            hwnd,
-            pid,
-            tid,
-        })
-    }
-
-    pub fn set_windows_hook_ex(&self, hook_id: WINDOWS_HOOK_ID, hook_func: Option<Hook>, module: Option<&RemoteModule>) -> Result<RemoteHook, Box<dyn std::error::Error>> {
+    pub fn set_windows_hook_ex(&self, hook_id: WINDOWS_HOOK_ID, hook_func: Option<Hook>, module: Option<&LocalModule>) -> Result<RemoteHook, Box<dyn std::error::Error>> {
         let hhook = unsafe {
             SetWindowsHookExW(
                 hook_id,
