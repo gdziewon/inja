@@ -20,7 +20,7 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
         inject_func_addr: usize,
         dll_path_mem_alloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let stub = create_next_hook_ex_shellcode(
+        let stub = build_shcode(
             dll_path_mem_alloc as u64,
             inject_func_addr as u64,
         )?;
@@ -57,7 +57,7 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
     }
 }
 
-fn create_next_hook_ex_shellcode(
+fn build_shcode(
     dll_path_ptr: u64,
     inject_func_ptr: u64,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
