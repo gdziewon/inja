@@ -13,16 +13,7 @@ use set_windows_hook_ex::SetWindowsHookExExecutor;
 use thread_hijacking::ThreadHijackingExecutor;
 use kernel_callback_table::KernelCallbackTableExecutor;
 use queue_user_apc::QueueUserAPCExecutor;
-
-#[derive(Debug)]
-pub enum ExecutionStrategy {
-    CreateRemoteThread,
-    NtCreateThreadEx,
-    ThreadHijacking,
-    SetWindowsHookEx,
-    KernelCallbackTable,
-    QueueUserAPC
-}
+use crate::ExecutionStrategy;
 
 pub trait ExecutionMethod {
     fn execute(

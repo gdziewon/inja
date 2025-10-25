@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::wrappers::{Module as _, RemoteProcess};
-use crate::executor::{Executor, ExecutionStrategy};
+use crate::executor::Executor;
+use crate::ExecutionStrategy;
 
 pub struct Injector {
     process: RemoteProcess,
