@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::{LPARAM, WPARAM}, System::{DataExchange::COPYDATASTRUCT, Threading::{PEB, PROCESS_BASIC_INFORMATION}}, UI::WindowsAndMessaging::WM_COPYDATA}};
+use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::{LPARAM, WPARAM}, System::{DataExchange::COPYDATASTRUCT, Threading::PROCESS_BASIC_INFORMATION}, UI::WindowsAndMessaging::WM_COPYDATA}};
 use dynasmrt::{dynasm, DynasmApi};
 use crate::{utils::to_wide, wrappers::{AllocatedMemory, HandleWrapper as _, RemoteAllocator as _, RemoteProcess}};
 
@@ -14,6 +14,7 @@ pub struct PebPartial {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
 pub struct KernelCallbackTable {
     pub __fnCOPYDATA: usize,
     pub __fnCOPYGLOBALDATA: usize,
@@ -167,7 +168,7 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
             remote_process.read_struct(peb.kernel_callback_table)?
         };
 
-        println!("KernelCallbackTable: {:?}", kct);
+        println!("KernelCallbackTable: {kct:?}");
 
         let stub = build_shcode(
             dll_path_mem_alloc.as_ptr() as u64,

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::wrappers::{Module as _, RemoteProcess};
 use crate::executor::Executor;
@@ -14,14 +14,14 @@ impl Injector {
         Ok(Injector { process })
     }
 
-    pub fn inject(&self, dll_path: &PathBuf, shellcode_execution_method: ExecutionStrategy) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn inject(&self, dll_path: &Path, shellcode_execution_method: ExecutionStrategy) -> Result<(), Box<dyn std::error::Error>> {
         if !dll_path.exists() {
             return Err("dll doesnt exist".into());
         }
 
         let dll_str = dll_path
             .to_str()
-            .ok_or_else(|| "Couldnt convert path to &str")?;
+            .ok_or("Couldnt convert path to &str")?;
 
         let remote_module = self.process.get_module("kernel32.dll")?;
         let remote_func_addr = remote_module.get_func_addr("LoadLibraryW")?;

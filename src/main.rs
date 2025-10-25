@@ -3,6 +3,7 @@ mod executor;
 mod utils;
 mod wrappers;
 
+use core::fmt;
 use std::{path::PathBuf, process::exit};
 use clap::{Parser, ValueEnum};
 
@@ -40,15 +41,15 @@ pub enum ExecutionStrategy {
     QueueUserAPC
 }
 
-impl ToString for ExecutionStrategy {
-    fn to_string(&self) -> String {
+impl fmt::Display for ExecutionStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ExecutionStrategy::CreateRemoteThread => "remote-thread".into(),
-            ExecutionStrategy::NtCreateThreadEx => "nt-thread".into(),
-            ExecutionStrategy::ThreadHijacking => "hijack".into(),
-            ExecutionStrategy::SetWindowsHookEx => "hook".into(),
-            ExecutionStrategy::KernelCallbackTable => "kct".into(),
-            ExecutionStrategy::QueueUserAPC => "apc".into(),
+            ExecutionStrategy::CreateRemoteThread => write!(f, "remote-thread"),
+            ExecutionStrategy::NtCreateThreadEx => write!(f, "nt-thread"),
+            ExecutionStrategy::ThreadHijacking => write!(f, "hijack"),
+            ExecutionStrategy::SetWindowsHookEx => write!(f, "hook"),
+            ExecutionStrategy::KernelCallbackTable => write!(f, "kct"),
+            ExecutionStrategy::QueueUserAPC => write!(f, "apc"),
         }
     }
 }
@@ -76,11 +77,11 @@ fn main() {
         "Injecting {} into {} using strategy: {}",
         absolute_dll_path.display(),
         args.process_name,
-        args.execution_method.to_string()
+        args.execution_method
     );
 
     if let Err(e) = injector.inject(&absolute_dll_path, args.execution_method) {
-        eprintln!("Injection failed: {}", e);
+        eprintln!("Injection failed: {e}");
         exit(1);
     }
 

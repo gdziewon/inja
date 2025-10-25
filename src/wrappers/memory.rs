@@ -2,8 +2,6 @@ use std::ffi::c_void;
 
 use windows::Win32::{Foundation::HANDLE, System::{Diagnostics::Debug::{FlushInstructionCache, WriteProcessMemory}, Memory::{VirtualFreeEx, MEM_RELEASE}}};
 
-
-
 pub struct AllocatedMemory {
     base_address: *mut c_void,
     size: usize,
@@ -21,12 +19,6 @@ impl AllocatedMemory {
 
     pub fn as_ptr(&self) -> *mut c_void {
         self.base_address
-    }
-
-    pub fn into_raw(self) -> *mut c_void {
-        let base = self.base_address;
-        std::mem::forget(self);
-        base
     }
     
     pub fn write(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {

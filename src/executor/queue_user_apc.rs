@@ -1,4 +1,4 @@
-use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
+use dynasmrt::{dynasm, DynasmApi};
 use windows::Win32::{Foundation::PAPCFUNC};
 
 use crate::wrappers::{
@@ -36,7 +36,7 @@ impl ExecutionMethod for QueueUserAPCExecutor {
         // 4.1 cast shellcode to fn pointer
         let p_thread_start_func: PapcFunc = unsafe { std::mem::transmute(shellcode_alloc.as_ptr()) };
 
-        println!("Created thread start function pointer: {:p}", p_thread_start_func);
+        println!("Created thread start function pointer: {p_thread_start_func:p}");
 
         // 4.2 Queue APC to each thread
         for remote_thread in threads { // todo: should we do it on all threads?

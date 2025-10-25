@@ -63,7 +63,7 @@ impl RemoteProcess {
 
         match found_entry {
             Some(pe32) => Self::from_pid(pe32.th32ProcessID),
-            None => Err(format!("process '{}' not found", process_name).into()),
+            None => Err(format!("process '{process_name}' not found").into()),
         }
     }
     
@@ -144,7 +144,7 @@ impl RemoteProcess {
         };
 
         if status.is_err() {
-            return Err(format!("NtQueryInformationProcess failed: {:?}", status).into());
+            return Err(format!("NtQueryInformationProcess failed: {status:?}").into());
         }
 
         let initialized_buffer = unsafe { buffer.assume_init() };
@@ -225,7 +225,7 @@ impl RemoteProcess {
                     base
                 ))
             }
-            None => Err(format!("module '{}' not found in target", module_name).into()),
+            None => Err(format!("module '{module_name}' not found in target").into()),
         }
     }
 

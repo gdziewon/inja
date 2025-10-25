@@ -38,7 +38,7 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
         let mut remote_thread = RemoteThread::default();
         let thread_handle_ptr = &mut remote_thread.handle_mut().0 as *mut _;
 
-        let process_handle_ptr = remote_process.handle().0 as *mut c_void;
+        let process_handle_ptr = remote_process.handle().0;
 
         let start_routine = inject_func_addr as *mut c_void;
 

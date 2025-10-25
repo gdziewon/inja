@@ -22,7 +22,7 @@ impl Module for LocalModule {
 
         address
         .map(|p| p as usize)
-        .ok_or_else(|| format!("Function '{}' not found in module", func_name).into())
+        .ok_or_else(|| format!("Function '{func_name}' not found in module").into())
     }
 }
 
