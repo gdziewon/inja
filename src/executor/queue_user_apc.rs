@@ -14,14 +14,14 @@ impl ExecutionMethod for QueueUserAPCExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_malloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 1. get & enumerate threads of remote proc
         let thread_ids = remote_process.get_thread_ids()?;
 
         // 2. build shellcode
         let stub = build_shcode(
-            dll_path_mem_alloc as u64,
+            dll_path_malloc as u64,
             inject_func_addr as u64,
         )?;
 

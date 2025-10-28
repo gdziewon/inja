@@ -151,7 +151,7 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_malloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let pbi = remote_process.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
 
@@ -168,7 +168,7 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
         println!("KernelCallbackTable: {:?}", kct);
 
         let stub = build_shcode(
-            dll_path_mem_alloc as u64,
+            dll_path_malloc as u64,
             inject_func_addr as u64,
         )?;
         let shellcode_mem = remote_process.alloc(stub.len(), true)?;

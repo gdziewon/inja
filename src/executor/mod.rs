@@ -30,26 +30,26 @@ pub trait ExecutionMethod {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_malloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 pub struct Executor<'a> {
     remote_process: &'a RemoteProcess,
     inject_func_addr: usize,
-    dll_path_mem_alloc: *mut c_void,
+    dll_path_malloc: *mut c_void,
 }
 
 impl Executor<'_> {
     pub fn new(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void
+        dll_path_malloc: *mut c_void
     ) -> Executor {
         Executor {
             remote_process,
             inject_func_addr,
-            dll_path_mem_alloc,
+            dll_path_malloc,
         }
     }
 
@@ -58,32 +58,32 @@ impl Executor<'_> {
             ExecutionStrategy::CreateRemoteThread => CreateRemoteThreadExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
-                self.dll_path_mem_alloc,
+                self.dll_path_malloc,
             ),
             ExecutionStrategy::NtCreateThreadEx => NtCreateThreadExExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
-                self.dll_path_mem_alloc,
+                self.dll_path_malloc,
             ),
             ExecutionStrategy::ThreadHijacking => ThreadHijackingExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
-                self.dll_path_mem_alloc,
+                self.dll_path_malloc,
             ),
             ExecutionStrategy::SetWindowsHookEx => SetWindowsHookExExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
-                self.dll_path_mem_alloc,
+                self.dll_path_malloc,
             ),
             ExecutionStrategy::KernelCallbackTable => KernelCallbackTableExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
-                self.dll_path_mem_alloc,
+                self.dll_path_malloc,
             ),
             ExecutionStrategy::QueueUserAPC => QueueUserAPCExecutor::execute(
                 self.remote_process,
                 self.inject_func_addr,
-                self.dll_path_mem_alloc,
+                self.dll_path_malloc,
             ),
         }
     }

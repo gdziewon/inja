@@ -14,7 +14,7 @@ impl ExecutionMethod for CreateRemoteThreadExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_malloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let remote_thread = RemoteThread::from(
             unsafe { // todo: use remotethread
@@ -23,7 +23,7 @@ impl ExecutionMethod for CreateRemoteThreadExecutor {
                 None,
                 0,
                 Some(std::mem::transmute(inject_func_addr)),
-                Some(dll_path_mem_alloc),
+                Some(dll_path_malloc),
                 0,
                 None
             )

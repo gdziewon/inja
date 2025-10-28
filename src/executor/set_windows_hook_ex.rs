@@ -18,10 +18,10 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_malloc: *mut c_void,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let stub = build_shcode(
-            dll_path_mem_alloc as u64,
+            dll_path_malloc as u64,
             inject_func_addr as u64,
         )?;
 
