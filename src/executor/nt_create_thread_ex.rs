@@ -1,6 +1,5 @@
 use std::{ffi::{c_void}, ptr, time::Duration};
 
-use dynasmrt::{dynasm, DynasmApi};
 use windows::{Wdk::Foundation::OBJECT_ATTRIBUTES, Win32::{Foundation::{NTSTATUS}, System::Threading::{THREAD_ALL_ACCESS}}};
 
 use crate::wrappers::{
@@ -23,14 +22,12 @@ pub type NtCreateThreadEx = unsafe extern "system" fn(
     attribute_list: *mut c_void,
 ) -> NTSTATUS;
 
-
 pub(super) struct NtCreateThreadExExecutor;
 
 impl ExecutionMethod for NtCreateThreadExExecutor {
     fn execute(
         remote_process: &RemoteProcess,
-        inject_func_addr: usize,
-        dll_path_malloc: *mut c_void,
+        shellcode_to_exec: &Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let ntdll = RemoteModule::new("ntdll.dll")?;
         let address = ntdll.get_func_addr("NtCreateThreadEx")?;
@@ -41,17 +38,7 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
 
         let process_handle_ptr = remote_process.handle().0 as *mut c_void;
 
-                // 2. build shellcode
-        let stub = build_shcode(
-            dll_path_malloc as u64,
-            inject_func_addr as u64,
-        )?;
-
-        // 3. alloc & write shellcode to remote proc
-        let shcode_mem = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(shcode_mem, &stub)?;
-
-        // let start_routine = inject_func_addr as *mut c_void;
+        let shellcode_mem = remote_process.write_shellcode(shellcode_to_exec)?;
 
         let ntstatus = unsafe {
             create_thread_ex_func(
@@ -59,9 +46,8 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
             THREAD_ALL_ACCESS.0,
             ptr::null_mut(),
             process_handle_ptr,
-            shcode_mem,
-            std::ptr::null_mut(),
-            // dll_path_malloc,
+            shellcode_mem,
+            ptr::null_mut(),
             0,
             0,
             0,
@@ -75,32 +61,6 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
         }
 
         remote_thread.wait_until_active(Duration::from_millis(u32::MAX as u64))?;
-
         Ok(())
     }
-}
-
-fn build_shcode(
-    dll_path_ptr: u64,
-    inject_func_ptr: u64
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut ops: dynasmrt::Assembler<dynasmrt::x64::X64Relocation> = dynasmrt::x64::Assembler::new()?;
-
-    dynasm!(ops
-        ; .arch x64
-        ; sub rsp, 0x20 // shadow space
-        ; sub rsp, 0x8  // align stack to 16 bytes (because call later pushes 8 bytes)
-
-        ; mov rcx, QWORD dll_path_ptr as i64
-        ; mov rax, QWORD inject_func_ptr as i64
-        ; call rax
-
-        ; add rsp, 0x28
-
-        ; ret
-    );
-
-    let buf = ops.finalize().unwrap();
-    println!("{:#04X?}, length: {}", buf.to_vec(), buf.to_vec().len());
-    Ok(buf.to_vec())
 }

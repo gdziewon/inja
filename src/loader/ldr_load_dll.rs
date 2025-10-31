@@ -16,15 +16,7 @@ impl LoadMethod for LdrLoadDllLoader {
 
         dynasm!(ops
             ; .arch x64
-            ; sub rsp, 0x20 // shadow space
-            ; sub rsp, 0x8  // align stack to 16 bytes (because call later pushes 8 bytes)
-
-            ; mov rcx, QWORD dll_path_malloc as i64
-            ; mov rax, QWORD load_library_fn_ptr as i64
-            ; call rax
-
-            ; add rsp, 0x28
-
+            // TODO: Implement
             ; ret
         );
 

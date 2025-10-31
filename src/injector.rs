@@ -23,12 +23,10 @@ impl Injector {
             .to_str()
             .ok_or_else(|| "Couldnt convert path to &str")?;
 
-        let remote_func_addr = self.process.get_remote_func_address("kernel32.dll", "LoadLibraryW")?;
         let dll_path_malloc = self.process.write_wide_string(dll_str)?;
+        let dll_load_sc0de = Loader::new(&self.process, dll_path_malloc).build_sc0de(dll_load_method)?;
 
-        let dll_load_sc0de = Loader::new(&self.process, dll_path_malloc).build_sc0de(dll_load_method);
-
-        let executor = Executor::new(&self.process, remote_func_addr, dll_path_malloc);
+        let executor = Executor::new(&self.process, &dll_load_sc0de);
 
         executor.execute(shellcode_execution_method)
     }

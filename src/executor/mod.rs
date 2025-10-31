@@ -1,6 +1,4 @@
-use std::ffi::c_void;
-
-use crate::wrappers::RemoteProcess;
+use crate::wrappers::{RemoteProcess};
 
 mod create_remote_thread;
 mod nt_create_thread_ex;
@@ -29,27 +27,23 @@ pub enum ExecutionStrategy {
 pub trait ExecutionMethod {
     fn execute(
         remote_process: &RemoteProcess,
-        inject_func_addr: usize,
-        dll_path_malloc: *mut c_void,
+        shellcode_to_exec: &Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 pub struct Executor<'a> {
     remote_process: &'a RemoteProcess,
-    inject_func_addr: usize,
-    dll_path_malloc: *mut c_void,
+    shellcode_to_exec: &'a Vec<u8>,
 }
 
 impl Executor<'_> {
-    pub fn new(
-        remote_process: &RemoteProcess,
-        inject_func_addr: usize,
-        dll_path_malloc: *mut c_void
-    ) -> Executor {
+    pub fn new<'a>(
+        remote_process: &'a RemoteProcess,
+        shellcode_to_exec: &'a Vec<u8>,
+    ) -> Executor<'a> {
         Executor {
             remote_process,
-            inject_func_addr,
-            dll_path_malloc,
+            shellcode_to_exec,
         }
     }
 
@@ -57,33 +51,27 @@ impl Executor<'_> {
         match shellcode_execution_method {
             ExecutionStrategy::CreateRemoteThread => CreateRemoteThreadExecutor::execute(
                 self.remote_process,
-                self.inject_func_addr,
-                self.dll_path_malloc,
+                self.shellcode_to_exec,
             ),
             ExecutionStrategy::NtCreateThreadEx => NtCreateThreadExExecutor::execute(
                 self.remote_process,
-                self.inject_func_addr,
-                self.dll_path_malloc,
+                self.shellcode_to_exec,
             ),
             ExecutionStrategy::ThreadHijacking => ThreadHijackingExecutor::execute(
                 self.remote_process,
-                self.inject_func_addr,
-                self.dll_path_malloc,
+                self.shellcode_to_exec,
             ),
             ExecutionStrategy::SetWindowsHookEx => SetWindowsHookExExecutor::execute(
                 self.remote_process,
-                self.inject_func_addr,
-                self.dll_path_malloc,
+                self.shellcode_to_exec,
             ),
             ExecutionStrategy::KernelCallbackTable => KernelCallbackTableExecutor::execute(
                 self.remote_process,
-                self.inject_func_addr,
-                self.dll_path_malloc,
+                self.shellcode_to_exec,
             ),
             ExecutionStrategy::QueueUserAPC => QueueUserAPCExecutor::execute(
                 self.remote_process,
-                self.inject_func_addr,
-                self.dll_path_malloc,
+                self.shellcode_to_exec,
             ),
         }
     }

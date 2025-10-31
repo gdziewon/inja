@@ -8,7 +8,7 @@ use std::ffi::c_void;
 pub use remote_process::RemoteProcess;
 pub use remote_thread::RemoteThread;
 pub use remote_module::RemoteModule;
-pub use remote_window::{RemoteWindow, Hook};
+pub use remote_window::Hook;
 
 pub trait HandleWrapper {
     type HandleType;
@@ -22,4 +22,5 @@ pub trait RemoteAllocator {
     fn alloc(&self, size: usize, exec: bool) -> Result<*mut c_void, Box<dyn std::error::Error>>;
     fn write(&self, addr: *mut c_void, data: &[u8]) -> Result<(), Box<dyn std::error::Error>>;
     fn flush_icache(&self, addr: *const c_void, size: usize) -> Result<(), Box<dyn std::error::Error>>;
+    fn write_shellcode(&self, shellcode: &Vec<u8>) -> Result<*mut c_void, Box<dyn std::error::Error>>;
 }

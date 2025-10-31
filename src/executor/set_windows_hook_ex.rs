@@ -1,7 +1,6 @@
-use std::{ffi::c_void, thread::sleep};
+use std::{thread::sleep};
 
-use dynasmrt::{dynasm, DynasmApi};
-use windows::{Win32::{Foundation::{LPARAM, LRESULT, WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}}};
+use windows::{Win32::{Foundation::{WPARAM}, UI::{Input::KeyboardAndMouse::VK_SPACE, WindowsAndMessaging::{WH_CALLWNDPROC, WM_KEYDOWN, WM_KEYUP}}}};
 
 use crate::wrappers::{
     RemoteAllocator as _,
@@ -17,16 +16,9 @@ pub(super) struct SetWindowsHookExExecutor;
 impl ExecutionMethod for SetWindowsHookExExecutor {
     fn execute(
         remote_process: &RemoteProcess,
-        inject_func_addr: usize,
-        dll_path_malloc: *mut c_void,
+        shellcode_to_exec: &Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let stub = build_shcode(
-            dll_path_malloc as u64,
-            inject_func_addr as u64,
-        )?;
-
-        let shellcode_mem = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(shellcode_mem, &stub)?;
+        let shellcode_mem = remote_process.write_shellcode(shellcode_to_exec)?;
 
         let windows = remote_process.get_windows()?;
         println!("Found {} windows in target process", windows.len());
@@ -57,28 +49,6 @@ impl ExecutionMethod for SetWindowsHookExExecutor {
     }
 }
 
-fn build_shcode(
-    dll_path_ptr: u64,
-    inject_func_ptr: u64,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut ops: dynasmrt::Assembler<dynasmrt::x64::X64Relocation> = dynasmrt::x64::Assembler::new()?;
-
-    dynasm!(ops
-        ; .arch x64
-        ; sub rsp, 0x28
-
-        ; mov rcx, QWORD dll_path_ptr as i64  // inject
-        ; mov rax, QWORD inject_func_ptr as i64
-        ; call rax
-
-        ; add rsp, 0x28
-
-        ; xor rax, rax // return 0 from a hooked function
-
-        ; ret
-    );
-
-    let buf = ops.finalize().unwrap();
-    println!("{:#04X?}, length: {}", buf.to_vec(), buf.to_vec().len());
-    Ok(buf.to_vec())
-}
+// this method had different shcode different by last instruction
+// initial tests OK, leaving this here if something fucks up in the future
+//         ; xor rax, rax // return 0 from a hooked function

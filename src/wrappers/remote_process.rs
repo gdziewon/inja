@@ -312,6 +312,15 @@ impl RemoteAllocator for RemoteProcess {
         unsafe { FlushInstructionCache(self.handle(), Some(addr), size) }?;
         Ok(())
     }
+
+    // Allocates & writes shellcode to remote process
+    // returns pointer to allocation in remote process
+    fn write_shellcode(&self, shellcode: &Vec<u8>) -> Result<*mut c_void, Box<dyn std::error::Error>> {
+        let shellcode_mem = self.alloc(shellcode.len(), true)?;
+        self.write(shellcode_mem, &shellcode)?;
+
+        Ok(shellcode_mem)
+    }
 }
 
 impl Drop for RemoteProcess {

