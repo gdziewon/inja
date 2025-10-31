@@ -30,5 +30,5 @@ fn main() {
     KernelCallbackTable,
     QueueUserAPC
      */
-    injector.inject(&args.dll_path.canonicalize().unwrap(), ExecutionStrategy::QueueUserAPC, LoadStrategy::LoadLibrary).unwrap();
+    injector.inject(&args.dll_path.canonicalize().unwrap(), ExecutionStrategy::CreateRemoteThread, LoadStrategy::LoadLibrary).unwrap();
 }

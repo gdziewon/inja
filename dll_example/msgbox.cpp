@@ -2,7 +2,7 @@
 
 DWORD WINAPI thread(LPVOID lpParam) {
     HMODULE hModule = (HMODULE)lpParam;
-    MessageBoxW(nullptr, L"meow1337", L"injected", MB_ICONINFORMATION);
+    MessageBox(GetFocus(), L"meow1337", L"injected", MB_ICONINFORMATION);
     FreeLibraryAndExitThread(hModule, 0);
 
     return 0;
@@ -25,3 +25,4 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     }
     return TRUE;
 }
+
