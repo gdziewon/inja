@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use windows::Win32::{Foundation::{CloseHandle, HANDLE, PAPCFUNC}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{GetThreadId, OpenThread, QueueUserAPC, ResumeThread, SuspendThread, THREAD_ACCESS_RIGHTS, THREAD_ALL_ACCESS}}};
+use windows::Win32::{Foundation::{CloseHandle, HANDLE, PAPCFUNC}, System::{Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT, CONTEXT_ALL_AMD64, CONTEXT_CONTROL_AMD64, CONTEXT_FULL_AMD64, CONTEXT_INTEGER_AMD64}, Threading::{GetThreadId, OpenThread, QueueUserAPC, ResumeThread, SuspendThread, THREAD_ACCESS_RIGHTS}}};
 
 use crate::wrappers::HandleWrapper;
 
@@ -17,6 +17,8 @@ impl<T> Align16<T> {
     }
 }
 
+trait Thread : HandleWrapper {}
+
 #[derive(Default)]
 pub struct RemoteThread {
     handle: HANDLE,
@@ -24,23 +26,7 @@ pub struct RemoteThread {
     suspended: bool,
 }
 
-impl HandleWrapper for RemoteThread {
-    type HandleType = HANDLE;
-
-    fn handle(&self) -> Self::HandleType {
-        self.handle
-    }
-
-    fn handle_mut(&mut self) -> &mut Self::HandleType {
-        &mut self.handle
-    }
-
-    fn into_handle(self) -> Self::HandleType {
-        let h = self.handle;
-        std::mem::forget(self);
-        h
-    }
-}
+impl Thread for RemoteThread {}
 
 impl From<HANDLE> for RemoteThread {
     fn from(handle: HANDLE) -> Self {
@@ -53,9 +39,21 @@ impl From<HANDLE> for RemoteThread {
     }
 }
 
+impl HandleWrapper for RemoteThread {
+    type HandleType = HANDLE;
+
+    fn handle(&self) -> Self::HandleType {
+        self.handle
+    }
+
+    fn handle_mut(&mut self) -> &mut Self::HandleType {
+        &mut self.handle
+    }
+}
+
 impl RemoteThread {
-    pub fn open(tid: u32, dw_desired_access: THREAD_ACCESS_RIGHTS) -> Result<Self, Box<dyn std::error::Error>> {
-        let handle = unsafe { OpenThread(dw_desired_access, false, tid) }?;
+    pub fn open(tid: u32, desired_access: THREAD_ACCESS_RIGHTS) -> Result<Self, Box<dyn std::error::Error>> {
+        let handle = unsafe { OpenThread(desired_access, false, tid) }?;
         Ok(Self {
             handle,
             tid,
@@ -114,7 +112,7 @@ impl RemoteThread {
     }
 
     pub fn queue_user_apc(&self, apc_fn_addr: PAPCFUNC, apc_param: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let result = unsafe { QueueUserAPC(std::mem::transmute(apc_fn_addr), self.handle, apc_param) };
+        let result = unsafe { QueueUserAPC(apc_fn_addr, self.handle, apc_param) };
         if result == 0 {
             return Err(format!("QueueUserAPC failed: {}", std::io::Error::last_os_error()).into());
         }

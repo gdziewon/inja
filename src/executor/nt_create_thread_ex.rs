@@ -3,7 +3,7 @@ use std::{ffi::{c_void}, ptr, time::Duration};
 use windows::{Wdk::Foundation::OBJECT_ATTRIBUTES, Win32::{Foundation::{NTSTATUS}, System::Threading::{THREAD_ALL_ACCESS}}};
 
 use crate::wrappers::{
-    HandleWrapper as _, RemoteModule, RemoteProcess, RemoteThread
+    AllocatedMemory, HandleWrapper as _, LocalModule, Module as _, RemoteProcess, RemoteThread
 };
 
 use super::ExecutionMethod;
@@ -29,16 +29,16 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_mem_alloc: &AllocatedMemory,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let ntdll = RemoteModule::new("ntdll.dll")?;
+        let ntdll = LocalModule::from_name("ntdll.dll")?;
         let address = ntdll.get_func_addr("NtCreateThreadEx")?;
         let create_thread_ex_func = unsafe { core::mem::transmute::<*mut core::ffi::c_void, NtCreateThreadEx>(address as *mut _) };
 
         let mut remote_thread = RemoteThread::default();
         let thread_handle_ptr = &mut remote_thread.handle_mut().0 as *mut _;
 
-        let process_handle_ptr = remote_process.handle().0 as *mut c_void;
+        let process_handle_ptr = remote_process.handle().0;
 
         let start_routine = inject_func_addr as *mut c_void;
 
@@ -49,7 +49,7 @@ impl ExecutionMethod for NtCreateThreadExExecutor {
             ptr::null_mut(),
             process_handle_ptr,
             start_routine,
-            dll_path_mem_alloc,
+            dll_path_mem_alloc.as_ptr(),
             0,
             0,
             0,

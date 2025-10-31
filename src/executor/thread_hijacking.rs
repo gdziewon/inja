@@ -1,10 +1,7 @@
-use std::ffi::c_void;
-
 use dynasmrt::{dynasm, DynasmApi};
 
 use crate::wrappers::{
-    RemoteAllocator as _,
-    RemoteProcess
+    AllocatedMemory, RemoteAllocator as _, RemoteProcess
 };
 
 use super::ExecutionMethod;
@@ -15,27 +12,31 @@ impl ExecutionMethod for ThreadHijackingExecutor {
     fn execute(
         remote_process: &RemoteProcess,
         inject_func_addr: usize,
-        dll_path_mem_alloc: *mut c_void,
+        dll_path_mem_alloc: &AllocatedMemory,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut remote_thread = remote_process.get_remote_thread()?;
+        let mut threads = remote_process.get_threads()?; // todo: look for a better thread
+        println!("Found {} threads", threads.len());
+        let mut remote_thread = threads.pop().ok_or("No threads found")?;
         remote_thread.suspend()?;
 
         let mut context = remote_thread.get_context()?;
         let stub = build_shcode(
-            dll_path_mem_alloc as u64,
+            dll_path_mem_alloc.as_ptr() as u64,
             inject_func_addr as u64,
             context.get().Rip
         )?;
 
         let shellcode_mem = remote_process.alloc(stub.len(), true)?;
-        remote_process.write(shellcode_mem, &stub)?;
-        remote_process.flush_icache(shellcode_mem, stub.len())?;
+        shellcode_mem.write(&stub)?;
+        shellcode_mem.flush_icache()?;
 
-        context.get_mut().Rip = shellcode_mem as u64;
+        context.get_mut().Rip = shellcode_mem.as_ptr() as u64;
 
         remote_thread.set_context(&context)?;
 
         remote_thread.resume()?;
+
+        std::mem::forget(shellcode_mem); // todo: this is workaround, fix later
 
         Ok(())
     }
