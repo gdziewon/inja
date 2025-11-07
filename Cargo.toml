@@ -8,6 +8,10 @@ name = "inja"
 path = "src/main.rs"
 
 [dependencies]
+reqwest = { version = "0.12.24", features = ["blocking"] }
+bitflags = "2.10.0"
+goblin = "0.10.3"
+dirs = "6.0.0" # 10 months inactive, we might need to switch later
 dynasmrt = {version = "4.0"}
 clap = { version = "4.5", features = ["derive"] }
 windows = {version = "0.62", features = ["Win32", "Wdk",
@@ -20,6 +24,7 @@ windows = {version = "0.62", features = ["Win32", "Wdk",
 "Win32_System_Diagnostics_ToolHelp",
 "Win32_System_Diagnostics_Debug",
 "Win32_System_DataExchange",
+"Win32_System_ProcessStatus",
 "Win32_UI_WindowsAndMessaging",
 "Win32_UI_Input_KeyboardAndMouse",
 "Wdk_Foundation",

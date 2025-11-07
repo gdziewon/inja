@@ -6,6 +6,7 @@ mod thread_hijacking;
 mod set_windows_hook_ex;
 mod kernel_callback_table;
 mod queue_user_apc;
+mod fake_veh;
 
 use create_remote_thread::CreateRemoteThreadExecutor;
 use nt_create_thread_ex::NtCreateThreadExExecutor;
@@ -13,6 +14,7 @@ use set_windows_hook_ex::SetWindowsHookExExecutor;
 use thread_hijacking::ThreadHijackingExecutor;
 use kernel_callback_table::KernelCallbackTableExecutor;
 use queue_user_apc::QueueUserAPCExecutor;
+use fake_veh::FakeVeh;
 use crate::ExecutionStrategy;
 
 pub trait ExecutionMethod {
@@ -70,6 +72,11 @@ impl Executor<'_> {
                 self.dll_path_mem_alloc,
             ),
             ExecutionStrategy::QueueUserAPC => QueueUserAPCExecutor::execute(
+                self.remote_process,
+                self.inject_func_addr,
+                self.dll_path_mem_alloc,
+            ),
+            ExecutionStrategy::FakeVeh => FakeVeh::execute(
                 self.remote_process,
                 self.inject_func_addr,
                 self.dll_path_mem_alloc,

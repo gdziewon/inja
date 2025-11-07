@@ -1,5 +1,6 @@
-use std::ffi::CString;
+use std::{ffi::CString, path::{Path, PathBuf}};
 
+use clap::builder::Str;
 use windows::{core::{PCWSTR, PCSTR}, Win32::{Foundation::HMODULE, System::LibraryLoader::{GetModuleHandleW, GetProcAddress}}};
 
 use crate::{utils::to_wide, wrappers::HandleWrapper};
@@ -63,6 +64,8 @@ pub struct RemoteModule {
     name: String,
     hmodule: HMODULE,
     base_addr: usize,
+    size: usize,
+    path: String,
 }
 
 impl Module for RemoteModule {
@@ -89,7 +92,23 @@ impl HandleWrapper for RemoteModule {
 }
 
 impl RemoteModule {
-    pub fn new(name: &str, hmodule: HMODULE, base_addr: usize) -> Self {
-        RemoteModule { name: name.to_owned(), hmodule, base_addr }
+    pub fn new(name: &str, hmodule: HMODULE, base_addr: usize, size: usize, path: &str) -> Self {
+        RemoteModule { name: name.to_owned(), hmodule, base_addr, size, path: path.to_owned() }
+    }
+
+    pub fn base_addr(&self) -> usize {
+        self.base_addr
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn path(&self) -> &String {
+        &self.path
+    }
+
+    pub fn name(&self) -> &String {
+        &self.name
     }
 }
