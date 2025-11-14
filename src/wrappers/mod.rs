@@ -4,8 +4,9 @@ mod module;
 mod thread;
 mod snapshot;
 mod memory;
+mod pe;
 
-pub use process::RemoteProcess;
+pub use process::{LocalProcess, RemoteProcess};
 pub use thread::RemoteThread;
 pub use memory::{AllocatedMemory, RemoteAllocator};
 pub use snapshot::{ModuleSnapshot, ProcessSnapshot, ThreadSnapshot};

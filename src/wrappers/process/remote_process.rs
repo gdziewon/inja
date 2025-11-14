@@ -6,12 +6,11 @@ use windows::core::BOOL;
 use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
 use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
-use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
-use windows::Win32::System::Threading::{GetProcessId, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
+use windows::Win32::System::Memory::{VirtualAllocEx, VirtualProtectEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, PAGE_READWRITE};
+use windows::Win32::System::Threading::{GetProcessId, IsWow64Process, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
-use super::RemoteAllocator;
-use crate::wrappers::memory::AllocatedMemory;
+use crate::wrappers::memory::{AllocatedMemory, RemoteAllocator};
 use crate::wrappers::module::RemoteModule;
 use crate::wrappers::{ModuleSnapshot, ProcessSnapshot, RemoteThread, ThreadSnapshot};
 use crate::utils::to_wide;
@@ -260,10 +259,20 @@ impl RemoteProcess {
             std::mem::size_of_val(data),
         ) };
         
-        // Call your existing unsafe `write`
         unsafe { self.write(addr, bytes) }
     }
 
+
+    // https://learn.microsoft.com/en-us/windows/win32/winprog64/running-32-bit-applications
+    // WOW64 is the x86 emulator that allows
+    // 32-bit Windows-based applications
+    // to run seamlessly on 64-bit Windows.
+    pub fn is_wow64(&self) -> Result<bool, Box<dyn::std::error::Error>> {
+        let mut result: BOOL = BOOL(0); // needs to be initialized
+        unsafe { IsWow64Process(self.handle, &mut result)?; };
+
+        Ok(result.as_bool())
+    }
 
     // pub fn free_library(&self, lib_mod_handle: usize) -> Result<(), Box<dyn std::error::Error>> { // todo: fix/refactor this is for unloading DLLs
     //     let free_library_addr = self.get_remote_func_address("kernel32.dll", "FreeLibrary")?;

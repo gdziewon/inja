@@ -38,7 +38,9 @@ pub enum ExecutionStrategy {
     #[clap(name = "kct")]
     KernelCallbackTable,
     #[clap(name = "apc")]
-    QueueUserAPC
+    QueueUserAPC,
+    #[clap(name = "man-map")]
+    ManualMap,
 }
 
 impl fmt::Display for ExecutionStrategy {
@@ -50,6 +52,7 @@ impl fmt::Display for ExecutionStrategy {
             ExecutionStrategy::SetWindowsHookEx => write!(f, "hook"),
             ExecutionStrategy::KernelCallbackTable => write!(f, "kct"),
             ExecutionStrategy::QueueUserAPC => write!(f, "apc"),
+            ExecutionStrategy::ManualMap => write!(f, "man-map"),
         }
     }
 }
