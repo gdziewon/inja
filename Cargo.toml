@@ -26,3 +26,4 @@ windows = {version = "0.62", features = ["Win32", "Wdk",
 "Wdk_System_Threading",
 "Wdk_System_SystemServices"
 ]}
+goblin = "0.10.3"

@@ -33,10 +33,6 @@ impl LocalProcess {
         }
     }
 
-    pub fn from_current() -> Self {
-        Self::new()
-    }
-
     pub fn is_wow64(&self) -> Result<bool, Box<dyn::std::error::Error>> {
         let mut result: BOOL = BOOL(0); // needs to be initialized
         unsafe { IsWow64Process(self.handle, &mut result)?; };
