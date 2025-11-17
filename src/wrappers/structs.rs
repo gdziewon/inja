@@ -3,7 +3,7 @@ use bitflags::bitflags;
 
 use windows::Win32::Foundation::{HANDLE, UNICODE_STRING};
 use windows::Win32::System::Threading::{
-    PEB_LDR_DATA, RTL_USER_PROCESS_PARAMETERS
+    PEB_LDR_DATA, RTL_USER_PROCESS_PARAMETERS, SRWLOCK
 };
 use windows::Win32::System::Kernel::{LIST_ENTRY, SLIST_HEADER};
 
@@ -180,4 +180,23 @@ pub struct Peb {
     pub leap_second_data: *mut c_void, // *mut LEAP_SECOND_DATA
     pub leap_second_flags_union: LeapSecondFlagsUnion,
     pub nt_global_flag2: u32,
+}
+
+// VEH
+#[repr(C)]
+#[derive(Debug)]
+pub struct RtlVectoredHandlerList {
+    pub lock: SRWLOCK,
+    pub list: LIST_ENTRY
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct RtlVectoredExceptionEntry {
+    pub list: LIST_ENTRY,
+    pub p_flag: *mut usize,
+    pub ref_count: u32,
+    pub padding: u32,
+    pub vectored_handler: *const c_void, // PVECTORED_EXCEPTION_HANDLER
+    pub flag: usize,
 }

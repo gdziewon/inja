@@ -18,7 +18,6 @@ impl Drop for RemoteHook {
 
 trait Window : HandleWrapper {}
 
-
 #[derive(Default)]
 pub struct RemoteWindow {
     hwnd: HWND,

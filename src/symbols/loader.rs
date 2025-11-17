@@ -53,6 +53,25 @@ impl SymbolLoader {
         ))
     }
 
+    fn verify_pdb_integrity(
+        &self,
+        pdb_path: &Path,
+        expected_pdb_sig: &PdbSignature,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let data = fs::read(pdb_path)?;
+
+        if data.len() < 24 || &data[0..4] != b"RSDS" {
+            return Ok(false);
+        }
+
+        let guid_bytes: [u8; 16] = data[4..20].try_into()?;
+        let guid = self.guid_from_signature(&guid_bytes)?;
+
+        let age = u32::from_le_bytes(data[20..24].try_into()?);
+
+        Ok(guid == expected_pdb_sig.guid && age == expected_pdb_sig.age)
+    }
+
     pub fn ensure_pdb_cached(
         &self,
         module: &RemoteModule,
@@ -68,8 +87,12 @@ impl SymbolLoader {
         let pdb_cache_filepath = pdb_cache_subdir.join(&pdb_sig.filename);
 
         if pdb_cache_filepath.exists() {
-            // todo: verify file integrity?
-            return Ok(());
+            if let Ok(true) = self.verify_pdb_integrity(&pdb_cache_filepath, &pdb_sig) {
+                return Ok(());
+            }
+            
+            // remove outdated/invalid
+            let _ = fs::remove_file(&pdb_cache_filepath);
         }
 
         let url = format!(

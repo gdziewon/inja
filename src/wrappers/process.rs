@@ -3,17 +3,17 @@ use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStringExt as _;
 
 use windows::core::BOOL;
-use windows::Wdk::System::Threading::{NtQueryInformationProcess, ProcessCookie, PROCESSINFOCLASS};
+use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS, ProcessBasicInformation, ProcessCookie};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
 use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
 use windows::Win32::System::Memory::{VirtualAllocEx, VirtualProtectEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, PAGE_READWRITE};
-use windows::Win32::System::Threading::{GetProcessId, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
+use windows::Win32::System::Threading::{GetProcessId, OpenProcess, PROCESS_BASIC_INFORMATION, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 use super::RemoteAllocator;
 use crate::wrappers::memory::AllocatedMemory;
 use crate::wrappers::module::RemoteModule;
-use crate::wrappers::{ModuleSnapshot, ProcessSnapshot, RemoteThread, ThreadSnapshot};
+use crate::wrappers::{CrossProcessFlags, ModuleSnapshot, Peb, ProcessSnapshot, RemoteThread, ThreadSnapshot};
 use crate::utils::to_wide;
 use crate::wrappers::window::RemoteWindow;
 use crate::wrappers::HandleWrapper;
@@ -312,6 +312,16 @@ impl RemoteProcess {
             )?;
         }
         Ok(old_prot)
+    }
+
+    pub fn is_using_veh(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        let pbi = self.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
+        let peb: Peb = unsafe { self.read_struct(pbi.PebBaseAddress as *const c_void)? };
+        let cross_flags = unsafe { peb.cross_process_flags_union.flags };
+
+        let is_using_veh = cross_flags.contains(CrossProcessFlags::PROCESS_USING_VEH);
+
+        Ok(is_using_veh)
     }
 
     // pub fn free_library(&self, lib_mod_handle: usize) -> Result<(), Box<dyn std::error::Error>> { // todo: fix/refactor this is for unloading DLLs

@@ -29,7 +29,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/inja.exe",
-            "args": ["C:\\Users\\gdziewon\\Downloads\\msgbox-stub-dll.dll", "Notepad.exe", "--exec", "veh"],
+            "args": ["${workspaceRoot}/dll_example/msgbox.dll", "Notepad.exe", "--exec", "veh"],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}",
             "environment": [],
