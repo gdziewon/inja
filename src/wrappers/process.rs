@@ -3,20 +3,21 @@ use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStringExt as _;
 
 use windows::core::BOOL;
-use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS};
+use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS, ProcessBasicInformation, ProcessCookie};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
 use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
-use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
-use windows::Win32::System::Threading::{GetProcessId, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
+use windows::Win32::System::Memory::{VirtualAllocEx, VirtualProtectEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, PAGE_READWRITE};
+use windows::Win32::System::Threading::{GetProcessId, OpenProcess, PROCESS_BASIC_INFORMATION, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, THREAD_ALL_ACCESS};
 use windows::Win32::System::Threading::{PROCESS_VM_OPERATION, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 use super::RemoteAllocator;
 use crate::wrappers::memory::AllocatedMemory;
 use crate::wrappers::module::RemoteModule;
-use crate::wrappers::{ModuleSnapshot, ProcessSnapshot, RemoteThread, ThreadSnapshot};
+use crate::wrappers::{CrossProcessFlags, ModuleSnapshot, Peb, ProcessSnapshot, RemoteThread, ThreadSnapshot};
 use crate::utils::to_wide;
 use crate::wrappers::window::RemoteWindow;
 use crate::wrappers::HandleWrapper;
+use crate::symbols::SymbolHandler;
 
 pub struct EnumWindowsData {
     target_pid: u32,
@@ -215,18 +216,53 @@ impl RemoteProcess {
             Some(me32) => {
                 let base = me32.modBaseAddr as usize;
                 let hmodule = me32.hModule;
+                let size = me32.modBaseSize as usize;
 
-                let len = me32.szModule.iter().position(|&c| c == 0).unwrap_or(me32.szModule.len());
-                let os_name = OsString::from_wide(&me32.szModule[..len]);
-                
+                let name_len = me32.szModule.iter().position(|&c| c == 0).unwrap_or(me32.szModule.len());
+                let os_name = OsString::from_wide(&me32.szModule[..name_len]);
+
+                let path_array = &me32.szExePath;
+                let path_len = path_array.iter().position(|&c| c == 0).unwrap_or(path_array.len());
+                let os_path = OsString::from_wide(&path_array[..path_len]);
+
+                let name_str = os_name.to_string_lossy();
+                let path_str = os_path.to_string_lossy();
+
                 Ok(RemoteModule::new(
-                    &os_name.to_string_lossy(),
+                    &name_str,
                     hmodule,
-                    base
+                    base,
+                    size,
+                    &path_str
                 ))
             }
             None => Err(format!("module '{module_name}' not found in target").into()),
         }
+    }
+
+    pub fn get_process_cookie(&self) -> Result<usize, Box<dyn std::error::Error>> {
+        let cookie: u32 = self.query_info(ProcessCookie)?;
+        Ok(cookie as usize)
+    }
+
+    pub fn encode_pointer(&self, encoded_ptr: usize) -> Result<usize, Box<dyn std::error::Error>> {
+        let cookie = self.get_process_cookie()?;
+        
+        let xored = encoded_ptr ^ cookie;
+        let encoded = xored.rotate_right((cookie & 0x3F) as u32);
+        Ok(encoded)
+    }
+
+    pub fn decode_pointer(&self, raw_ptr: usize) -> Result<usize, Box<dyn std::error::Error>> {
+        let cookie = self.get_process_cookie()?;
+        
+        let rotated = raw_ptr.rotate_left((cookie & 0x3F) as u32);
+        let decoded = rotated ^ cookie;
+        Ok(decoded)
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.pid
     }
 
     /// # Safety
@@ -264,6 +300,29 @@ impl RemoteProcess {
         unsafe { self.write(addr, bytes) }
     }
 
+    pub fn set_protection(&self, addr: *mut c_void, size: usize, prot: PAGE_PROTECTION_FLAGS) -> Result<PAGE_PROTECTION_FLAGS, Box<dyn std::error::Error>> {
+        let mut old_prot = PAGE_PROTECTION_FLAGS::default();
+        unsafe {
+            VirtualProtectEx(
+                self.handle(),
+                addr,
+                size,
+                prot,
+                &mut old_prot,
+            )?;
+        }
+        Ok(old_prot)
+    }
+
+    pub fn is_using_veh(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        let pbi = self.query_info::<PROCESS_BASIC_INFORMATION>(ProcessBasicInformation)?;
+        let peb: Peb = unsafe { self.read_struct(pbi.PebBaseAddress as *const c_void)? };
+        let cross_flags = unsafe { peb.cross_process_flags_union.flags };
+
+        let is_using_veh = cross_flags.contains(CrossProcessFlags::PROCESS_USING_VEH);
+
+        Ok(is_using_veh)
+    }
 
     // pub fn free_library(&self, lib_mod_handle: usize) -> Result<(), Box<dyn std::error::Error>> { // todo: fix/refactor this is for unloading DLLs
     //     let free_library_addr = self.get_remote_func_address("kernel32.dll", "FreeLibrary")?;

@@ -2,6 +2,7 @@ mod injector;
 mod executor;
 mod utils;
 mod wrappers;
+mod symbols;
 
 use core::fmt;
 use std::{path::PathBuf, process::exit};
@@ -38,7 +39,9 @@ pub enum ExecutionStrategy {
     #[clap(name = "kct")]
     KernelCallbackTable,
     #[clap(name = "apc")]
-    QueueUserAPC
+    QueueUserAPC,
+    #[clap(name = "veh")]
+    FakeVeh,
 }
 
 impl fmt::Display for ExecutionStrategy {
@@ -50,6 +53,7 @@ impl fmt::Display for ExecutionStrategy {
             ExecutionStrategy::SetWindowsHookEx => write!(f, "hook"),
             ExecutionStrategy::KernelCallbackTable => write!(f, "kct"),
             ExecutionStrategy::QueueUserAPC => write!(f, "apc"),
+            ExecutionStrategy::FakeVeh => write!(f, "veh"),
         }
     }
 }

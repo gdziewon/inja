@@ -27,6 +27,8 @@ impl Injector {
         let remote_func_addr = remote_module.get_func_addr("LoadLibraryW")?;
         let dll_path_mem_alloc = self.process.write_wide_string(dll_str)?;
 
+        println!("target process PID: {}", self.process.pid());
+
         let executor = Executor::new(&self.process, remote_func_addr, &dll_path_mem_alloc);
 
         executor.execute(shellcode_execution_method)?;
